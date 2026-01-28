@@ -361,7 +361,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
       `${order.sucursal?.address ? `Dirección: ${order.sucursal.address}\n` : ''}` +
       `${order.sucursal?.phone ? `Teléfono: ${order.sucursal.phone}\n` : ''}\n` +
       `Por favor acércate a retirar tu equipo.\n\n` +
-      `Saludos,\n${order.sucursal?.name || 'iDocStore'}`
+      `Saludos,\n${order.sucursal?.name || 'Tec-Solution'}`
     );
 
     // Abrir WhatsApp Web con el mensaje
@@ -692,7 +692,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
 
       // Mensaje para WhatsApp
       const message = encodeURIComponent(
-        `Hola ${order.customer.name},\n\nTe envío el PDF de tu orden ${order.order_number}.\n\nPor favor adjunta el archivo PDF que se descargó automáticamente.\n\nSaludos,\niDocStore`
+        `Hola ${order.customer.name},\n\nTe envío el PDF de tu orden ${order.order_number}.\n\nPor favor adjunta el archivo PDF que se descargó automáticamente.\n\nSaludos,\nTec-Solution`
       );
 
       // Abrir WhatsApp Web

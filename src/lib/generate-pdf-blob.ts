@@ -72,7 +72,7 @@ export async function generatePDFBlob(
   let qrDataUrl = "";
   try {
     qrDataUrl = await QRCode.toDataURL(
-      `https://ordenes.idocstore.cl/${order.order_number}`,
+      `https://ordenes.tec-solution.cl/${order.order_number}`,
       { width: 60, margin: 1 }
     );
   } catch (error) {
@@ -185,7 +185,7 @@ export async function generatePDFBlob(
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.text("iDocStore", margin + 3, yPosition + 6);
+  doc.text("Tec-Solution", margin + 3, yPosition + 6);
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(9);

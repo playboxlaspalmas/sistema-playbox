@@ -37,7 +37,7 @@ export const POST: APIRoute = async ({ request }) => {
         if (!logoUrl.startsWith("http")) {
           // Si es relativa, construir URL completa usando el dominio de producción
           // En producción, usar el dominio real; en desarrollo, usar localhost
-          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://app.idocstore.cl";
+          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://app.tec-solution.cl";
           logoUrl = `${baseUrl}${logoUrl.startsWith("/") ? "" : "/"}${logoUrl}`;
         }
         
@@ -104,8 +104,8 @@ export const POST: APIRoute = async ({ request }) => {
     // Email de origen: SIEMPRE usar el email del admin (todas las sucursales usan el mismo)
     // IMPORTANTE: El email debe ser del dominio verificado en Resend
     // Todas las sucursales envían desde el mismo correo del admin
-    const fromEmail = "info@app.idocstore.cl";
-    const fromName = branchName ? `${branchName} - iDocStore` : "iDocStore";
+    const fromEmail = "info@app.tec-solution.cl";
+    const fromName = branchName ? `${branchName} - Tec-Solution` : "Tec-Solution";
     
     // Validar que el email del destinatario sea válido
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -201,10 +201,10 @@ export const POST: APIRoute = async ({ request }) => {
               <div class="header">
                 ${logoDataUrl ? `
                   <div class="logo-container">
-                    <img src="${logoDataUrl}" alt="iDocStore Logo" />
+                    <img src="${logoDataUrl}" alt="Tec-Solution Logo" />
                   </div>
                 ` : ''}
-                <h1>✅ iDocStore</h1>
+                <h1>✅ Tec-Solution</h1>
                 <p>¡Su equipo está listo!</p>
               </div>
               <div class="content">
@@ -236,11 +236,11 @@ export const POST: APIRoute = async ({ request }) => {
                 
                 <p>Esperamos verlo pronto para entregarle su equipo.</p>
                 
-                <p>Atentamente,<br><strong>Equipo iDocStore</strong></p>
+                <p>Atentamente,<br><strong>Equipo Tec-Solution</strong></p>
               </div>
               <div class="footer">
                 <p>Este es un correo automático, por favor no responda a este mensaje.</p>
-                <p>&copy; ${new Date().getFullYear()} iDocStore. Todos los derechos reservados.</p>
+                <p>&copy; ${new Date().getFullYear()} Tec-Solution. Todos los derechos reservados.</p>
               </div>
             </div>
           </body>
@@ -309,10 +309,10 @@ export const POST: APIRoute = async ({ request }) => {
               <div class="header">
                 ${logoDataUrl ? `
                   <div class="logo-container">
-                    <img src="${logoDataUrl}" alt="iDocStore Logo" />
+                    <img src="${logoDataUrl}" alt="Tec-Solution Logo" />
                   </div>
                 ` : ''}
-                <h1>iDocStore</h1>
+                <h1>Tec-Solution</h1>
                 <p>Servicio Especializado en Reparación</p>
               </div>
               <div class="content">
@@ -346,13 +346,13 @@ export const POST: APIRoute = async ({ request }) => {
                 
                 <p>Si tiene alguna consulta o necesita más información, no dude en contactarnos.</p>
                 
-                <p>Atentamente,<br><strong>Equipo iDocStore</strong></p>
+                <p>Atentamente,<br><strong>Equipo Tec-Solution</strong></p>
                 
                 ${branchName ? `<p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>` : ""}
               </div>
               <div class="footer">
                 <p>Este es un correo automático, por favor no responda a este mensaje.</p>
-                <p>&copy; ${new Date().getFullYear()} iDocStore. Todos los derechos reservados.</p>
+                <p>&copy; ${new Date().getFullYear()} Tec-Solution. Todos los derechos reservados.</p>
               </div>
             </div>
           </body>
@@ -372,7 +372,7 @@ export const POST: APIRoute = async ({ request }) => {
         'Importance': 'high',
         'X-Auto-Response-Suppress': 'All',
         // Marcar como transaccional para evitar que vaya a promociones
-        'X-Mailer': 'iDocStore-Order-System',
+        'X-Mailer': 'Tec-Solution-Order-System',
       },
       // Tags para identificar como email transaccional en Resend
       tags: [

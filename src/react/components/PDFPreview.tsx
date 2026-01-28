@@ -37,6 +37,12 @@ export default function PDFPreview({
   const [loading, setLoading] = useState(true);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
   const printMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Detectar si es un dispositivo móvil
+  const isMobile = typeof window !== 'undefined' && (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (window.innerWidth <= 768)
+  );
 
   useEffect(() => {
     // Limpiar caché de settings al montar el componente para asegurar datos frescos
@@ -57,6 +63,18 @@ export default function PDFPreview({
     generatePDF();
     }
   }, [order?.id, order?.order_number]);
+
+  // Descarga automática en móviles cuando el PDF está listo
+  useEffect(() => {
+    if (isMobile && pdfBlob && !loading) {
+      // Pequeño delay para asegurar que el usuario vea el mensaje
+      const timer = setTimeout(() => {
+        handleDownload();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, pdfBlob, loading]);
 
   // Cerrar menú al hacer click fuera
   useEffect(() => {
@@ -287,7 +305,7 @@ export default function PDFPreview({
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("iDocStore", margin + 3, yPosition + 6);
+      doc.text("Tec-Solution", margin + 3, yPosition + 6);
       doc.text("CLIENTE", clientPanelX + 3, yPosition + 6);
 
       doc.setTextColor(0, 0, 0);
@@ -1681,7 +1699,7 @@ export default function PDFPreview({
       let qrDataUrl = "";
       try {
         qrDataUrl = await QRCode.toDataURL(
-          `https://ordenes.idocstore.cl/${order.order_number}`,
+          `https://ordenes.tec-solution.cl/${order.order_number}`,
           { width: 80, margin: 1 }
         );
       } catch (error) {
@@ -1706,7 +1724,7 @@ export default function PDFPreview({
       const contentWidth = pageWidth - 2 * margin;
       let yPosition = margin;
 
-      // Logo iDocStore en el medio arriba - el doble de grande
+      // Logo Tec-Solution en el medio arriba - el doble de grande
       if (logoDataUrl) {
         const logoHeight = settings.pdf_logo.height * 2; // Doble de grande
         const logoWidth = settings.pdf_logo.width * 2; // Doble de grande
@@ -1727,7 +1745,7 @@ export default function PDFPreview({
       yPosition += 8;
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
-      const branchName = orderForPDF.sucursal?.razon_social || orderForPDF.sucursal?.name || "iDocStore";
+      const branchName = orderForPDF.sucursal?.razon_social || orderForPDF.sucursal?.name || "Tec-Solution";
       doc.text(`Nombre: ${branchName}`, margin, yPosition);
       yPosition += 8; // Aumentado de 6 a 8 para igualar datos del cliente
       doc.text(`Fecha de Emisión: ${formatDateTime(order.created_at)}`, margin, yPosition);
@@ -2159,6 +2177,67 @@ export default function PDFPreview({
     }
   }
 
+  function handleDownload(e?: React.MouseEvent) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!pdfBlob) return;
+    
+    try {
+      // Método compatible con Android y móviles
+      const fileName = `Orden_${order.order_number}_${formatDate(order.created_at).replace(/\//g, "-")}.pdf`;
+      
+      // Crear URL del blob
+      const url = URL.createObjectURL(pdfBlob);
+      
+      // Método 1: Usar link de descarga (funciona en la mayoría de navegadores)
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.style.display = 'none';
+      link.setAttribute('target', '_blank'); // Para Android
+      
+      // Agregar al DOM, hacer click y remover
+      document.body.appendChild(link);
+      link.click();
+      
+      // Limpiar después de un momento
+      setTimeout(() => {
+        if (document.body.contains(link)) {
+          document.body.removeChild(link);
+        }
+        URL.revokeObjectURL(url);
+      }, 200);
+      
+      // Método 2: Fallback con jsPDF (si está disponible)
+      if (pdfDoc) {
+        try {
+          pdfDoc.save(fileName);
+        } catch (pdfError) {
+          console.log("Método jsPDF.save falló, usando método de link");
+        }
+      }
+      
+      // Método 3: Para Android Chrome, intentar abrir en nueva pestaña como último recurso
+      if (isMobile && /Android/i.test(navigator.userAgent)) {
+        setTimeout(() => {
+          // Si después de 500ms no se descargó, abrir en nueva pestaña
+          const newUrl = URL.createObjectURL(pdfBlob);
+          window.open(newUrl, '_blank');
+          setTimeout(() => URL.revokeObjectURL(newUrl), 1000);
+        }, 500);
+      }
+    } catch (error) {
+      console.error("Error descargando PDF:", error);
+      // Fallback final: abrir en nueva ventana
+      if (pdfBlob) {
+        const url = URL.createObjectURL(pdfBlob);
+        window.open(url, '_blank');
+      }
+    }
+  }
+
   function handleWhatsApp(e?: React.MouseEvent) {
     if (e) {
       e.preventDefault();
@@ -2201,14 +2280,53 @@ export default function PDFPreview({
               <p className="text-slate-600">Generando PDF...</p>
             </div>
           ) : pdfBlob ? (
-            <div className="bg-white shadow-lg mx-auto" style={{ width: "210mm" }}>
-              <iframe
-                src={URL.createObjectURL(pdfBlob)}
-                className="w-full border-0"
-                style={{ minHeight: "297mm", width: "210mm" }}
-                title="PDF Preview"
-              />
-            </div>
+            isMobile ? (
+              // Vista para móviles: mostrar información y botón de descarga prominente
+              <div className="bg-white shadow-lg mx-auto p-6 max-w-md rounded-lg">
+                <div className="text-center mb-6">
+                  <div className="text-6xl mb-4">📄</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">
+                    Orden {order.order_number}
+                  </h3>
+                  <p className="text-slate-600 mb-4">
+                    PDF generado exitosamente
+                  </p>
+                  <p className="text-sm text-slate-500 mb-6">
+                    En dispositivos móviles, el PDF se descarga automáticamente. 
+                    Si no se descargó, usa el botón de abajo.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    className="w-full px-6 py-4 bg-brand text-white rounded-lg font-bold text-lg shadow-lg hover:bg-brand-light transition-colors flex items-center justify-center gap-3"
+                  >
+                    <span>⬇️</span>
+                    <span>Descargar PDF</span>
+                  </button>
+                </div>
+                <div className="border-t pt-4">
+                  <p className="text-sm text-slate-600 mb-2">
+                    <strong>Cliente:</strong> {order.customer?.name || 'N/A'}
+                  </p>
+                  <p className="text-sm text-slate-600 mb-2">
+                    <strong>Total:</strong> {formatCLP(order.total_repair_cost)}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    <strong>Fecha:</strong> {formatDate(order.created_at)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              // Vista para desktop: iframe con preview
+              <div className="bg-white shadow-lg mx-auto" style={{ width: "210mm" }}>
+                <iframe
+                  src={URL.createObjectURL(pdfBlob)}
+                  className="w-full border-0"
+                  style={{ minHeight: "297mm", width: "210mm" }}
+                  title="PDF Preview"
+                />
+              </div>
+            )
           ) : (
             <div className="flex items-center justify-center h-64">
               <p className="text-slate-600">Error al generar PDF</p>
@@ -2216,7 +2334,17 @@ export default function PDFPreview({
           )}
         </div>
 
-        <div className="bg-slate-50 p-4 flex justify-end gap-3 border-t">
+        <div className="bg-slate-50 p-4 flex justify-end gap-3 border-t flex-wrap">
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center gap-2"
+              disabled={!pdfBlob}
+            >
+              ⬇️ Descargar
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {

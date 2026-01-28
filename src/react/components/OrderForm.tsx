@@ -597,9 +597,69 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       
       setCreatedOrder(orderWithRelations);
       setCreatedOrderServices(orderServicesForPDF);
-      setShowPDFPreview(true);
+      
+      // Detectar si es móvil
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+      
       const devicesCount = devices.length;
-      alert(`Orden creada exitosamente con ${devicesCount} equipo${devicesCount === 1 ? '' : 's'}. Se abrirá la vista previa del PDF.`);
+      
+      if (isMobile) {
+        // En móviles, generar PDF y descargar automáticamente
+        try {
+          const allServices = devices.flatMap(device => device.selectedServices);
+          const pdfBlob = await generatePDFBlob(
+            orderWithRelations,
+            allServices,
+            totalLaborCost,
+            totalReplacementCost,
+            warrantyDays,
+            firstDevice.checklistData,
+            [],
+            orderServicesForPDF
+          );
+          
+          // Descargar automáticamente con método robusto para Android
+          const fileName = `Orden_${orderWithRelations.order_number}_${new Date().toISOString().split('T')[0]}.pdf`;
+          const url = URL.createObjectURL(pdfBlob);
+          
+          // Método 1: Link de descarga
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          link.style.display = 'none';
+          link.setAttribute('target', '_blank'); // Para Android
+          document.body.appendChild(link);
+          link.click();
+          
+          // Limpiar después
+          setTimeout(() => {
+            if (document.body.contains(link)) {
+              document.body.removeChild(link);
+            }
+            URL.revokeObjectURL(url);
+          }, 200);
+          
+          // Método 2: Fallback para Android Chrome - abrir en nueva pestaña
+          if (/Android/i.test(navigator.userAgent)) {
+            setTimeout(() => {
+              const fallbackUrl = URL.createObjectURL(pdfBlob);
+              window.open(fallbackUrl, '_blank');
+              setTimeout(() => URL.revokeObjectURL(fallbackUrl), 1000);
+            }, 500);
+          }
+          
+          alert(`Orden creada exitosamente con ${devicesCount} equipo${devicesCount === 1 ? '' : 's'}. El PDF se ha descargado automáticamente.`);
+        } catch (pdfError) {
+          console.error("Error generando PDF para descarga automática:", pdfError);
+          // Si falla, mostrar preview normal
+          setShowPDFPreview(true);
+          alert(`Orden creada exitosamente con ${devicesCount} equipo${devicesCount === 1 ? '' : 's'}. Se abrirá la vista previa del PDF.`);
+        }
+      } else {
+        // En desktop, mostrar preview
+        setShowPDFPreview(true);
+        alert(`Orden creada exitosamente con ${devicesCount} equipo${devicesCount === 1 ? '' : 's'}. Se abrirá la vista previa del PDF.`);
+      }
       
       // Enviar email al cliente en segundo plano (no bloquear)
       // Usar setTimeout para que no bloquee la UI

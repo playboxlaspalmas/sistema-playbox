@@ -30,7 +30,7 @@ export function generateOrderPDF(
   }
 
   // Nombre de la empresa
-  const companyName = order.sucursal?.razon_social || order.sucursal?.name || "IDoc STORE";
+  const companyName = order.sucursal?.razon_social || order.sucursal?.name || "Tec-Solution";
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
   doc.text(companyName, margin, yPosition);

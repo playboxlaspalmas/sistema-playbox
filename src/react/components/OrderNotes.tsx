@@ -122,7 +122,7 @@ export default function OrderNotes({ orderId, order, currentUserId }: OrderNotes
 
       // Mensaje para WhatsApp con la nota incluida
       const message = encodeURIComponent(
-        `Hola ${order.customer.name},\n\nTengo una actualización sobre tu orden ${order.order_number}:\n\n${note.note}\n\nSaludos,\niDocStore`
+        `Hola ${order.customer.name},\n\nTengo una actualización sobre tu orden ${order.order_number}:\n\n${note.note}\n\nSaludos,\nTec-Solution`
       );
 
       // Abrir WhatsApp Web con el mensaje

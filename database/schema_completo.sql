@@ -81,6 +81,7 @@ CREATE TABLE users (
   email TEXT NOT NULL UNIQUE,
   avatar_url TEXT,
   sucursal_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+  permissions JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

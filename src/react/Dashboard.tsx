@@ -80,7 +80,7 @@ function Header({
             )}
             <img 
               src={logoConfig.url} 
-              alt="IDoc STORE Logo" 
+              alt="Tec-Solution Logo" 
               style={{
                 width: `${logoConfig.width}px`,
                 height: `${logoConfig.height}px`,

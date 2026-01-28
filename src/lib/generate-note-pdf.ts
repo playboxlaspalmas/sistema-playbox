@@ -137,7 +137,7 @@ export async function generateNotePDFBlob(
   doc.setTextColor(156, 163, 175);
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
-  doc.text("iDocStore - Servicio Especializado", pageWidth / 2, footerY, { align: "center" });
+  doc.text("Tec-Solution - Servicio Especializado", pageWidth / 2, footerY, { align: "center" });
   
   if (order.sucursal) {
     doc.text(

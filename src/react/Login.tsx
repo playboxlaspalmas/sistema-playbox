@@ -134,11 +134,11 @@ export default function Login() {
         <div className="text-center">
           <img 
             src="/logo.png" 
-            alt="IDoc STORE Logo" 
+            alt="Tec-Solution Logo" 
             className="h-56 w-auto mx-auto mb-4 object-contain"
           />
           <h2 className="text-2xl font-bold text-brand mb-2">Sistema de Gestión de Órdenes</h2>
-          <p className="text-brand-gold-400">IDoc STORE - Servicio Especializado</p>
+          <p className="text-brand-gold-400">Tec-Solution - Servicio Especializado</p>
         </div>
 
         {err && (

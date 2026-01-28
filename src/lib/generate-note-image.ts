@@ -171,7 +171,7 @@ export async function generateNoteImageBlob(
   ctx.fillStyle = '#9ca3af';
   ctx.font = '12px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('iDocStore - Servicio Especializado', width / 2, footerY);
+  ctx.fillText('Tec-Solution - Servicio Especializado', width / 2, footerY);
   
   if (order.sucursal) {
     ctx.fillText(
