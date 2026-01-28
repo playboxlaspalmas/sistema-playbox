@@ -1,0 +1,205 @@
+---
+// Página de prueba de conexión a Supabase
+// Accede a: http://localhost:4321/test-connection
+---
+
+<html>
+<head>
+  <title>Test de Conexión - Supabase</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .success { color: green; }
+    .error { color: red; }
+    .info { color: blue; }
+    pre {
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Test de Conexión a Supabase</h1>
+  
+  <div class="test-section">
+    <h2>1. Variables de Entorno</h2>
+    <div id="env-test">
+      <p>Cargando...</p>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>2. Conexión a Supabase</h2>
+    <div id="connection-test">
+      <p>Cargando...</p>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>3. Consulta a Base de Datos (sin auth)</h2>
+    <button onclick="testQuery()">Probar Consulta</button>
+    <div id="query-test">
+      <p>Haz clic en "Probar Consulta" para verificar acceso a la base de datos</p>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>4. Test de Autenticación</h2>
+    <div>
+      <input type="email" id="test-email" placeholder="Email" value="admin@servicio.com" style="padding: 8px; width: 200px; margin: 5px;">
+      <input type="password" id="test-password" placeholder="Password" value="12345678" style="padding: 8px; width: 200px; margin: 5px;">
+      <button onclick="testAuth()">Probar Login</button>
+    </div>
+    <div id="auth-test">
+      <p>Ingresa credenciales y haz clic en "Probar Login"</p>
+    </div>
+  </div>
+
+  <script>
+    (async function() {
+      // Importar Supabase dinámicamente
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+
+      // 1. Verificar variables de entorno
+      const url = import.meta.env.PUBLIC_SUPABASE_URL;
+      const anon = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+
+      const envDiv = document.getElementById('env-test');
+      if (url && anon) {
+        envDiv.innerHTML = `
+          <p class="success">✅ Variables de entorno configuradas</p>
+          <p><strong>URL:</strong> ${url}</p>
+          <p><strong>Anon Key:</strong> ${anon.substring(0, 20)}...${anon.substring(anon.length - 10)}</p>
+        `;
+      } else {
+        envDiv.innerHTML = `
+          <p class="error">❌ Variables de entorno NO configuradas</p>
+          <p>URL: ${url ? '✅' : '❌'}</p>
+          <p>Anon Key: ${anon ? '✅' : '❌'}</p>
+          <p>Crea el archivo .env.local con PUBLIC_SUPABASE_URL y PUBLIC_SUPABASE_ANON_KEY</p>
+        `;
+        return;
+      }
+
+      // 2. Crear cliente Supabase
+      let supabase;
+      try {
+        supabase = createClient(url, anon);
+        const connectionDiv = document.getElementById('connection-test');
+        connectionDiv.innerHTML = `
+          <p class="success">✅ Cliente de Supabase creado correctamente</p>
+          <p>URL: ${url}</p>
+        `;
+      } catch (error) {
+        const connectionDiv = document.getElementById('connection-test');
+        connectionDiv.innerHTML = `
+          <p class="error">❌ Error al crear cliente: ${error.message}</p>
+        `;
+        return;
+      }
+
+      // 3. Función para probar consulta (global)
+      window.testQuery = async function() {
+        const queryDiv = document.getElementById('query-test');
+        queryDiv.innerHTML = '<p class="info">Probando consulta...</p>';
+
+        try {
+          // Intentar consultar una tabla pública (branches)
+          const { data, error } = await supabase
+            .from('branches')
+            .select('id, name')
+            .limit(1);
+
+          if (error) {
+            queryDiv.innerHTML = `
+              <p class="error">❌ Error en consulta:</p>
+              <pre>${JSON.stringify(error, null, 2)}</pre>
+              <p><strong>Esto indica:</strong> ${error.message.includes('RLS') ? 'Problema con Row Level Security (RLS)' : 'Problema de conexión o permisos'}</p>
+            `;
+          } else {
+            queryDiv.innerHTML = `
+              <p class="success">✅ Conexión a base de datos EXITOSA</p>
+              <p>Se pudo consultar la tabla 'branches'</p>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+          }
+        } catch (err) {
+          queryDiv.innerHTML = `
+            <p class="error">❌ Error de conexión:</p>
+            <pre>${err.message}</pre>
+          `;
+        }
+      };
+
+      // 4. Función para probar autenticación (global)
+      window.testAuth = async function() {
+        const authDiv = document.getElementById('auth-test');
+        const email = document.getElementById('test-email').value;
+        const password = document.getElementById('test-password').value;
+
+        authDiv.innerHTML = '<p class="info">Probando autenticación...</p>';
+
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (error) {
+            authDiv.innerHTML = `
+              <p class="error">❌ Error de autenticación:</p>
+              <pre>${JSON.stringify(error, null, 2)}</pre>
+              <p><strong>Mensaje:</strong> ${error.message}</p>
+              <p><strong>Status:</strong> ${error.status}</p>
+              <p><strong>Nombre:</strong> ${error.name}</p>
+            `;
+          } else {
+            authDiv.innerHTML = `
+              <p class="success">✅ Autenticación EXITOSA</p>
+              <p>Usuario: ${data.user?.email}</p>
+              <p>ID: ${data.user?.id}</p>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+          }
+        } catch (err) {
+          authDiv.innerHTML = `
+            <p class="error">❌ Error inesperado:</p>
+            <pre>${err.message}</pre>
+          `;
+        }
+      };
+
+      // Auto-ejecutar test de conexión
+      setTimeout(() => {
+        if (supabase) {
+          window.testQuery();
+        }
+      }, 500);
+    })();
+  </script>
+</body>
+</html>

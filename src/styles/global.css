@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-brand-black-light text-brand-black-text;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+  min-height: 100vh;
+}
+
+/* Scrollbar personalizado con estilo dorado */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4af37;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #f4d03f;
+}
+
+/* Estilos para inputs y formularios */
+input, textarea, select {
+  @apply bg-brand-black-lighter border-brand-black-border text-brand-black-text;
+}
+
+input:focus, textarea:focus, select:focus {
+  @apply border-brand ring-brand ring-opacity-50;
+}
+
+
+
