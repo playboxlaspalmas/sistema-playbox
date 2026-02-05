@@ -279,7 +279,7 @@ export default function BranchPermissionsModal({
                     <input
                       type="email"
                       className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
-                      placeholder="Email (ej: manquehue@tec-solution.com)"
+                      placeholder="Email (ej: manquehue@playbox.com)"
                       value={newUserEmail}
                       onChange={(e) => setNewUserEmail(e.target.value)}
                     />

@@ -307,7 +307,7 @@ export default function PDFPreview({
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("Tec-Solution", margin + 3, yPosition + 6);
+      doc.text("Playbox", margin + 3, yPosition + 6);
       doc.text("CLIENTE", clientPanelX + 3, yPosition + 6);
 
       doc.setTextColor(0, 0, 0);
@@ -1806,7 +1806,7 @@ export default function PDFPreview({
       let qrDataUrl = "";
       try {
         qrDataUrl = await QRCode.toDataURL(
-          `https://ordenes.tec-solution.cl/${order.order_number}`,
+          `https://ordenes.playbox.cl/${order.order_number}`,
           { width: 80, margin: 1 }
         );
       } catch (error) {
@@ -1831,7 +1831,7 @@ export default function PDFPreview({
       const contentWidth = pageWidth - 2 * margin;
       let yPosition = margin;
 
-      // Logo Tec-Solution en el medio arriba - el doble de grande
+      // Logo Playbox en el medio arriba - el doble de grande
       if (logoDataUrl) {
         const logoHeight = settings.pdf_logo.height * 2; // Doble de grande
         const logoWidth = settings.pdf_logo.width * 2; // Doble de grande
@@ -1852,7 +1852,7 @@ export default function PDFPreview({
       yPosition += 8;
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
-      const branchName = orderForPDF.sucursal?.razon_social || orderForPDF.sucursal?.name || "Tec-Solution";
+      const branchName = orderForPDF.sucursal?.razon_social || orderForPDF.sucursal?.name || "Playbox";
       doc.text(`Nombre: ${branchName}`, margin, yPosition);
       yPosition += 8; // Aumentado de 6 a 8 para igualar datos del cliente
       doc.text(`Fecha de Emisión: ${formatDateTime(order.created_at)}`, margin, yPosition);

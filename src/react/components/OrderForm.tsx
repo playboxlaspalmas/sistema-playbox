@@ -346,6 +346,22 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         } else {
           sucursalId = tech?.sucursal_id || null;
           
+          // Si el usuario es admin y no tiene sucursal_id, usar sucursal 1 por defecto
+          if (!sucursalId && tech?.role === 'admin') {
+            // Buscar la primera sucursal (sucursal 1)
+            const { data: firstBranch, error: firstBranchError } = await supabase
+              .from("branches")
+              .select("id")
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            
+            if (!firstBranchError && firstBranch) {
+              sucursalId = firstBranch.id;
+              console.log("[ORDER FORM] Admin sin sucursal asignada, usando sucursal por defecto:", sucursalId);
+            }
+          }
+          
           // Cargar datos completos de la sucursal por separado
           if (sucursalId) {
             const { data: branch, error: branchError } = await supabase
@@ -798,8 +814,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
                 orderNumber: createdOrder.order_number,
                 pdfBase64: pdfBase64, // Puede ser null si se subió a storage
                 pdfUrl: pdfUrl, // URL del PDF si se subió exitosamente
-                branchName: updatedBranchData?.name || branchData?.name,
+                branchName: updatedBranchData?.name || updatedBranchData?.razon_social || branchData?.name || branchData?.razon_social,
                 branchEmail: updatedBranchData?.email || branchData?.email,
+                branchPhone: updatedBranchData?.phone || branchData?.phone,
+                branchAddress: updatedBranchData?.address || branchData?.address,
               }),
             });
 

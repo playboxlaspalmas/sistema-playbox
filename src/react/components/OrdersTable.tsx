@@ -362,7 +362,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
       `${order.sucursal?.address ? `Dirección: ${order.sucursal.address}\n` : ''}` +
       `${order.sucursal?.phone ? `Teléfono: ${order.sucursal.phone}\n` : ''}\n` +
       `Por favor acércate a retirar tu equipo.\n\n` +
-      `Saludos,\n${order.sucursal?.name || 'Tec-Solution'}`
+      `Saludos,\n${order.sucursal?.name || order.sucursal?.razon_social || 'Playbox'}`
     );
 
     // Abrir WhatsApp Web con el mensaje
@@ -803,8 +803,10 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
           customerName: order.customer.name,
           orderNumber: order.order_number,
           pdfBase64: pdfBase64,
-          branchName: branchData?.name || order.sucursal?.name,
+          branchName: branchData?.name || branchData?.razon_social || order.sucursal?.name || order.sucursal?.razon_social,
           branchEmail: branchData?.email || order.sucursal?.email,
+          branchPhone: branchData?.phone || order.sucursal?.phone,
+          branchAddress: branchData?.address || order.sucursal?.address,
           emailType: 'order_created',
         }),
       });
@@ -902,7 +904,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
 
       // Mensaje para WhatsApp
       const message = encodeURIComponent(
-        `Hola ${order.customer.name},\n\nTe envío el PDF de tu orden ${order.order_number}.\n\nPor favor adjunta el archivo PDF que se descargó automáticamente.\n\nSaludos,\nTec-Solution`
+        `Hola ${order.customer.name},\n\nTe envío el PDF de tu orden ${order.order_number}.\n\nPor favor adjunta el archivo PDF que se descargó automáticamente.\n\nSaludos,\nPlaybox`
       );
 
       // Abrir WhatsApp Web

@@ -312,7 +312,7 @@ export async function generateTicket80mm(data: TicketData): Promise<Blob> {
   doc.setFont("helvetica", "normal");
   doc.text("Gracias por su compra", ticketWidth / 2, yPosition, { align: 'center' });
   yPosition += 10;
-  doc.text("Tec-Solution", ticketWidth / 2, yPosition, { align: 'center' });
+  doc.text("Playbox", ticketWidth / 2, yPosition, { align: 'center' });
 
   // Ajustar altura del documento al contenido
   doc.setPage(1);

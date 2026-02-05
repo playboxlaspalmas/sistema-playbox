@@ -84,7 +84,7 @@ function Header({
             )}
             <img 
               src={logoConfig.url} 
-              alt="Tec-Solution Logo" 
+              alt="Playbox Logo" 
               style={{
                 width: `${logoConfig.width}px`,
                 height: `${logoConfig.height}px`,

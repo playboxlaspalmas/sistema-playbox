@@ -37,7 +37,7 @@ export const POST: APIRoute = async ({ request }) => {
         if (!logoUrl.startsWith("http")) {
           // Si es relativa, construir URL completa usando el dominio de producción
           // En producción, usar el dominio real; en desarrollo, usar localhost
-          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://app.tec-solution.cl";
+          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://app.playbox.cl";
           logoUrl = `${baseUrl}${logoUrl.startsWith("/") ? "" : "/"}${logoUrl}`;
         }
         
@@ -74,6 +74,8 @@ export const POST: APIRoute = async ({ request }) => {
       pdfUrl, // URL del PDF si se subió a storage
       branchName,
       branchEmail, // Ya no se usa, pero se mantiene para compatibilidad
+      branchPhone, // Teléfono de la sucursal
+      branchAddress, // Dirección de la sucursal
       emailType = 'order_created' // 'order_created' o 'ready_for_pickup'
     } = body;
     
@@ -101,27 +103,43 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    // Email de origen: Configuración flexible
+    // Email de origen: Configuración desde variables de entorno
     // 
-    // OPCIÓN 1: Si tienes un dominio verificado en Resend, usa ese dominio:
-    // const fromEmail = branchEmail || "info@tu-dominio-verificado.com";
-    //
-    // OPCIÓN 2: Si NO tienes dominio verificado, solo puedes enviar a tu email (temporal):
-    // const fromEmail = "tecsolution26@gmail.com";
-    //
     // IMPORTANTE: Para enviar a clientes, necesitas verificar un dominio en Resend.
-    // Ve a resend.com/domains y sigue las instrucciones.
+    // Configura estas variables de entorno en Vercel:
+    // - RESEND_FROM_EMAIL: Email del dominio verificado (ej: noreply@tudominio.com)
+    // - RESEND_FROM_NAME: Nombre que aparecerá como remitente (opcional)
+    //
+    // Si no tienes dominio verificado, Resend solo permite enviar a tu email registrado.
     // Los dominios .vercel.app NO funcionan porque Vercel controla los DNS.
     // Necesitas un dominio personalizado (aunque sea gratuito de otro proveedor).
     
-    // Por defecto: usar email de prueba (solo permite enviar a tecsolution26@gmail.com)
-    const resendTestEmail = "tecsolution26@gmail.com";
+    // Obtener email de origen desde variables de entorno
+    const resendFromEmail = import.meta.env.RESEND_FROM_EMAIL;
+    const resendFromName = import.meta.env.RESEND_FROM_NAME || "Playbox";
     
-    // Si tienes un dominio verificado, cambia esta línea:
-    // const fromEmail = branchEmail || "info@tu-dominio-verificado.com";
-    const fromEmail = resendTestEmail; // TEMPORAL: Cambiar cuando tengas dominio verificado
+    // Si no hay email configurado, usar el email de la sucursal o un fallback
+    let fromEmail: string;
+    if (resendFromEmail) {
+      // Usar el email configurado en variables de entorno
+      fromEmail = resendFromEmail;
+    } else if (branchEmail && branchEmail.includes('@')) {
+      // Intentar usar el email de la sucursal si es válido
+      fromEmail = branchEmail;
+    } else {
+      // Fallback: mostrar error explicativo
+      console.error("[EMAIL API] ERROR: RESEND_FROM_EMAIL no configurada en variables de entorno");
+      return new Response(
+        JSON.stringify({ 
+          error: "RESEND_FROM_EMAIL no configurada. Configura esta variable de entorno en Vercel con un email de tu dominio verificado en Resend (ej: noreply@tudominio.com)",
+          hint: "Ve a Vercel → Settings → Environment Variables y agrega RESEND_FROM_EMAIL"
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
     
-    const fromName = branchName ? `${branchName} - Tec-Solution` : "Tec-Solution";
+    // Nombre del remitente: usar variable de entorno o fallback
+    const fromName = resendFromName || (branchName ? `${branchName} - Playbox` : "Playbox");
     
     // Validar que el email del destinatario sea válido
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -129,24 +147,6 @@ export const POST: APIRoute = async ({ request }) => {
       console.error("Email del destinatario inválido:", to);
       return new Response(
         JSON.stringify({ error: `Email del destinatario inválido: ${to}` }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Validación: Con dominio de prueba, solo se puede enviar a la dirección registrada
-    // Si el destinatario no es el email registrado, cambiar el destinatario temporalmente
-    // o mostrar un error más descriptivo
-    if (to !== resendTestEmail) {
-      console.warn(`[EMAIL API] ADVERTENCIA: Intentando enviar a ${to}, pero con dominio de prueba solo se puede enviar a ${resendTestEmail}`);
-      // Opción 1: Cambiar el destinatario al email registrado (para pruebas)
-      // Opción 2: Retornar error explicativo
-      // Por ahora, retornamos un error explicativo para que el usuario sepa qué hacer
-      return new Response(
-        JSON.stringify({ 
-          error: `Con el dominio de prueba de Resend solo puedes enviar a ${resendTestEmail}. Para enviar a otros destinatarios, verifica un dominio en Resend (resend.com/domains) y actualiza el email de origen en el código.`,
-          recipient: to,
-          allowedRecipient: resendTestEmail
-        }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -235,10 +235,10 @@ export const POST: APIRoute = async ({ request }) => {
               <div class="header">
                 ${logoDataUrl ? `
                   <div class="logo-container">
-                    <img src="${logoDataUrl}" alt="Tec-Solution Logo" />
+                    <img src="${logoDataUrl}" alt="Playbox Logo" />
                   </div>
                 ` : ''}
-                <h1>✅ Tec-Solution</h1>
+                <h1>✅ Playbox</h1>
                 <p>¡Su equipo está listo!</p>
               </div>
               <div class="content">
@@ -264,17 +264,22 @@ export const POST: APIRoute = async ({ request }) => {
                 </ul>
                 
                 ${branchName ? `
-                  <p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>
-                  ${branchEmail ? `<p><strong>Email:</strong> ${branchEmail}</p>` : ""}
+                  <div style="background-color: #e0f2fe; border-left: 4px solid #1877F2; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                    <p style="margin: 0; font-weight: bold; color: #1e3a8a; margin-bottom: 10px;">📍 Información de la Sucursal:</p>
+                    <p style="margin: 5px 0;"><strong>Sucursal:</strong> ${branchName}</p>
+                    ${branchEmail ? `<p style="margin: 5px 0;"><strong>Email:</strong> ${branchEmail}</p>` : ""}
+                    ${branchPhone ? `<p style="margin: 5px 0;"><strong>Teléfono:</strong> ${branchPhone}</p>` : ""}
+                    ${branchAddress ? `<p style="margin: 5px 0;"><strong>Dirección:</strong> ${branchAddress}</p>` : ""}
+                  </div>
                 ` : ""}
                 
                 <p>Esperamos verlo pronto para entregarle su equipo.</p>
                 
-                <p>Atentamente,<br><strong>Equipo Tec-Solution</strong></p>
+                <p>Atentamente,<br><strong>Equipo Playbox</strong></p>
               </div>
               <div class="footer">
                 <p>Este es un correo automático, por favor no responda a este mensaje.</p>
-                <p>&copy; ${new Date().getFullYear()} Tec-Solution. Todos los derechos reservados.</p>
+                <p>&copy; ${new Date().getFullYear()} Playbox. Todos los derechos reservados.</p>
               </div>
             </div>
           </body>
@@ -343,10 +348,10 @@ export const POST: APIRoute = async ({ request }) => {
               <div class="header">
                 ${logoDataUrl ? `
                   <div class="logo-container">
-                    <img src="${logoDataUrl}" alt="Tec-Solution Logo" />
+                    <img src="${logoDataUrl}" alt="Playbox Logo" />
                   </div>
                 ` : ''}
-                <h1>Tec-Solution</h1>
+                <h1>Playbox</h1>
                 <p>Servicio Especializado en Reparación</p>
               </div>
               <div class="content">
@@ -380,13 +385,21 @@ export const POST: APIRoute = async ({ request }) => {
                 
                 <p>Si tiene alguna consulta o necesita más información, no dude en contactarnos.</p>
                 
-                <p>Atentamente,<br><strong>Equipo Tec-Solution</strong></p>
+                ${branchName ? `
+                  <div style="background-color: #e0f2fe; border-left: 4px solid #1877F2; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                    <p style="margin: 0; font-weight: bold; color: #1e3a8a; margin-bottom: 10px;">📍 Información de la Sucursal:</p>
+                    <p style="margin: 5px 0;"><strong>Sucursal:</strong> ${branchName}</p>
+                    ${branchEmail ? `<p style="margin: 5px 0;"><strong>Email:</strong> ${branchEmail}</p>` : ""}
+                    ${branchPhone ? `<p style="margin: 5px 0;"><strong>Teléfono:</strong> ${branchPhone}</p>` : ""}
+                    ${branchAddress ? `<p style="margin: 5px 0;"><strong>Dirección:</strong> ${branchAddress}</p>` : ""}
+                  </div>
+                ` : ""}
                 
-                ${branchName ? `<p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>` : ""}
+                <p>Atentamente,<br><strong>Equipo Playbox</strong></p>
               </div>
               <div class="footer">
                 <p>Este es un correo automático, por favor no responda a este mensaje.</p>
-                <p>&copy; ${new Date().getFullYear()} Tec-Solution. Todos los derechos reservados.</p>
+                <p>&copy; ${new Date().getFullYear()} Playbox. Todos los derechos reservados.</p>
               </div>
             </div>
           </body>
@@ -406,7 +419,7 @@ export const POST: APIRoute = async ({ request }) => {
         'Importance': 'high',
         'X-Auto-Response-Suppress': 'All',
         // Marcar como transaccional para evitar que vaya a promociones
-        'X-Mailer': 'Tec-Solution-Order-System',
+        'X-Mailer': 'Playbox-Order-System',
       },
       // Tags para identificar como email transaccional en Resend
       tags: [
