@@ -259,18 +259,20 @@ export default function ProductosStock({ user }: ProductosStockProps) {
         return;
       }
 
-      // Si hay una categoría escrita pero no existe, crearla primero
+      // Si hay una categoría escrita, verificar si existe o crearla
       let categoriaIdFinal = formData.categoria_id;
-      if (categoriaInput && categoriaInput.trim() && !formData.categoria_id) {
+      if (categoriaInput && categoriaInput.trim()) {
         // Buscar si existe con el nombre exacto (case insensitive)
         const categoriaExistente = categorias.find(
           cat => cat.nombre.toLowerCase() === categoriaInput.trim().toLowerCase()
         );
         
         if (categoriaExistente) {
+          // Usar la categoría existente
           categoriaIdFinal = categoriaExistente.id;
         } else {
-          // Crear nueva categoría
+          // Crear nueva categoría si no existe
+          console.log('[ProductosStock] Creando nueva categoría:', categoriaInput.trim());
           const { data: nuevaCategoria, error: catError } = await supabase
             .from('categorias_accesorios')
             .insert({
@@ -280,11 +282,20 @@ export default function ProductosStock({ user }: ProductosStockProps) {
             .select()
             .single();
 
-          if (catError) throw catError;
+          if (catError) {
+            console.error('[ProductosStock] Error creando categoría:', catError);
+            throw new Error(`Error al crear la categoría: ${catError.message}`);
+          }
+          
           categoriaIdFinal = nuevaCategoria.id;
-          // Recargar categorías
+          console.log('[ProductosStock] Categoría creada exitosamente:', nuevaCategoria);
+          
+          // Recargar categorías para que esté disponible en el futuro
           await cargarCategorias();
         }
+      } else if (!categoriaInput || !categoriaInput.trim()) {
+        // Si no hay categoría escrita, limpiar categoria_id
+        categoriaIdFinal = null;
       }
 
       const datos = {
@@ -673,12 +684,20 @@ export default function ProductosStock({ user }: ProductosStockProps) {
                     setShowCategoriaSuggestions(false);
                   }
                   
-                  // Si no hay coincidencias, limpiar categoria_id
-                  if (!categorias.find(cat => cat.nombre.toLowerCase() === value.toLowerCase())) {
+                  // Si no hay coincidencias exactas, limpiar categoria_id para permitir crear nueva categoría
+                  const categoriaExacta = categorias.find(cat => cat.nombre.toLowerCase() === value.toLowerCase());
+                  if (!categoriaExacta) {
                     setFormData({
                       ...formData,
-                      categoria_id: '',
+                      categoria_id: '', // Limpiar para que se cree nueva categoría al guardar
                       categoria: value,
+                    });
+                  } else {
+                    // Si hay coincidencia exacta, usar esa categoría
+                    setFormData({
+                      ...formData,
+                      categoria_id: categoriaExacta.id,
+                      categoria: categoriaExacta.nombre,
                     });
                   }
                 }}

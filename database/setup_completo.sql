@@ -1003,9 +1003,21 @@ CREATE POLICY "ventas_select_own_or_sucursal_or_admin" ON ventas FOR SELECT
     OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
   );
 CREATE POLICY "ventas_insert_authenticated" ON ventas FOR INSERT 
-  WITH CHECK (auth.uid() IS NOT NULL);
+  WITH CHECK (
+    auth.uid() IS NOT NULL 
+    AND (
+      usuario_id = auth.uid()
+      OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+    )
+  );
 CREATE POLICY "ventas_update_authenticated" ON ventas FOR UPDATE 
-  USING (auth.uid() IS NOT NULL);
+  USING (
+    auth.uid() IS NOT NULL 
+    AND (
+      usuario_id = auth.uid()
+      OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+    )
+  );
 
 -- Políticas para venta_items
 CREATE POLICY "venta_items_select_authenticated" ON venta_items FOR SELECT 
