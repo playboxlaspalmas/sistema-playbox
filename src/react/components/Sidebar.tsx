@@ -15,7 +15,9 @@ export type DashboardSection =
   | "pos"
   | "productos-stock"
   | "ventas-metricas"
-  | "ventas";
+  | "ventas"
+  | "caja"
+  | "reportes-ventas";
 
 interface SidebarProps {
   user: User;
@@ -55,6 +57,8 @@ export default function Sidebar({
     { id: "productos-stock", label: "Productos/Stock", icon: "📦" },
     { id: "ventas", label: "Ventas", icon: "🧾" },
     { id: "ventas-metricas", label: "Métricas Ventas", icon: "📈" },
+    { id: "caja", label: "Caja Diaria", icon: "💰" },
+    { id: "reportes-ventas", label: "Reportes PDF", icon: "📄" },
     { id: "customers", label: "Clientes", icon: "👥" },
     { id: "branches", label: "Sucursales", icon: "🏢" },
     { id: "users", label: "Usuarios", icon: "👤" },
@@ -78,12 +82,9 @@ export default function Sidebar({
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-20 left-0 h-[calc(100vh-5rem)] w-64 bg-brand-dark-light border-r border-brand-dark-border-gold shadow-soft z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed top-20 left-0 h-[calc(100vh-5rem)] w-64 bg-white border-r border-gray-200 shadow-lg z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{
-          boxShadow: '2px 0 12px rgba(0, 0, 0, 0.4), inset -1px 0 0 rgba(212, 175, 55, 0.1)'
-        }}
       >
         <nav className="p-4 space-y-2">
           {filteredItems.map((item) => (
@@ -93,10 +94,10 @@ export default function Sidebar({
                 onSectionChange(item.id);
                 onClose();
               }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-md transition-all duration-200 ${
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                 currentSection === item.id
-                  ? "bg-brand text-brand-dark font-bold shadow-gold"
-                  : "text-brand-dark-text-light hover:bg-brand-dark-lighter hover:text-brand border border-transparent hover:border-brand-dark-border-gold"
+                  ? "bg-brand text-white font-semibold shadow-md"
+                  : "text-gray-700 hover:bg-gray-100 hover:text-brand"
               }`}
             >
               <span className="text-xl">{item.icon}</span>

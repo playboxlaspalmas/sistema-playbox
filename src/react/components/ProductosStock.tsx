@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
-import type { Producto, User } from '@/types';
+import type { Producto, User, CategoriaAccesorio } from '@/types';
 import { formatCurrency } from '@/lib/currency';
+import CategoriasAccesorios from './CategoriasAccesorios';
+import DispositivosRepuestos from './DispositivosRepuestos';
 
 interface ProductosStockProps {
   user: User;
 }
 
 export default function ProductosStock({ user }: ProductosStockProps) {
+  const [tabActiva, setTabActiva] = useState<'accesorios' | 'repuestos' | 'categorias' | 'dispositivos'>('accesorios');
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [categorias, setCategorias] = useState<CategoriaAccesorio[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
@@ -25,13 +29,32 @@ export default function ProductosStock({ user }: ProductosStockProps) {
     codigo_barras: '',
     nombre: '',
     categoria: '',
+    categoria_id: '',
+    marca: '',
+    modelo: '',
     precio_venta: '',
     costo: '',
     stock_actual: '',
     stock_minimo: '',
   });
 
-  // Cargar productos
+  // Cargar categorías
+  const cargarCategorias = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categorias_accesorios')
+        .select('*')
+        .eq('activa', true)
+        .order('nombre', { ascending: true });
+
+      if (error) throw error;
+      setCategorias(data || []);
+    } catch (err: any) {
+      console.error('Error cargando categorías:', err);
+    }
+  }, []);
+
+  // Cargar productos (solo accesorios)
   const cargarProductos = useCallback(async () => {
     try {
       setLoading(true);
@@ -40,12 +63,13 @@ export default function ProductosStock({ user }: ProductosStockProps) {
       let query = supabase
         .from('productos')
         .select('*')
+        .eq('tipo', 'accesorio')
         .order('nombre', { ascending: true });
 
       // Filtrar por búsqueda
       if (busqueda) {
         query = query.or(
-          `nombre.ilike.%${busqueda}%,codigo_barras.ilike.%${busqueda}%,categoria.ilike.%${busqueda}%`
+          `nombre.ilike.%${busqueda}%,codigo_barras.ilike.%${busqueda}%,categoria.ilike.%${busqueda}%,marca.ilike.%${busqueda}%,modelo.ilike.%${busqueda}%`
         );
       }
 
@@ -63,8 +87,11 @@ export default function ProductosStock({ user }: ProductosStockProps) {
   }, [busqueda]);
 
   useEffect(() => {
-    cargarProductos();
-  }, [cargarProductos]);
+    if (tabActiva === 'accesorios') {
+      cargarProductos();
+      cargarCategorias();
+    }
+  }, [cargarProductos, cargarCategorias, tabActiva]);
 
   // Interceptar eventos de teclado para prevenir acciones no deseadas del navegador
   useEffect(() => {
@@ -210,6 +237,10 @@ export default function ProductosStock({ user }: ProductosStockProps) {
         codigo_barras: formData.codigo_barras && formData.codigo_barras.trim() !== '' ? formData.codigo_barras.trim() : null,
         nombre: formData.nombre.trim(),
         categoria: formData.categoria && formData.categoria.trim() !== '' ? formData.categoria.trim() : null,
+        categoria_id: formData.categoria_id || null,
+        marca: formData.marca && formData.marca.trim() !== '' ? formData.marca.trim() : null,
+        modelo: formData.modelo && formData.modelo.trim() !== '' ? formData.modelo.trim() : null,
+        tipo: 'accesorio' as const,
         precio_venta: precioVenta,
         costo: parseFloat(formData.costo) || 0,
         stock_actual: parseInt(formData.stock_actual) || 0,
@@ -256,6 +287,9 @@ export default function ProductosStock({ user }: ProductosStockProps) {
         codigo_barras: '',
         nombre: '',
         categoria: '',
+        categoria_id: '',
+        marca: '',
+        modelo: '',
         precio_venta: '',
         costo: '',
         stock_actual: '',
@@ -367,41 +401,100 @@ export default function ProductosStock({ user }: ProductosStockProps) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="mb-6 flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Gestión de Productos y Stock</h2>
-        <div className="flex gap-3">
+        <h2 className="text-2xl font-bold text-slate-800">Gestión de Stock</h2>
+      </div>
+
+      {/* Pestañas */}
+      <div className="border-b border-slate-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
           <button
-            onClick={() => {
-              setModoEscaneo(!modoEscaneo);
-              setCodigoEscaneado('');
-            }}
-            className={`px-4 py-2 rounded-lg font-medium ${
-              modoEscaneo
-                ? 'bg-green-600 text-white'
-                : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+            onClick={() => setTabActiva('accesorios')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              tabActiva === 'accesorios'
+                ? 'border-brand text-brand'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            {modoEscaneo ? '🟢 Modo Escaneo ON' : '⚪ Modo Escaneo OFF'}
+            📦 Accesorios
           </button>
           <button
-            onClick={() => {
-              setProductoEditando(null);
-              setFormData({
-                codigo_barras: '',
-                nombre: '',
-                categoria: '',
-                precio_venta: '',
-                costo: '',
-                stock_actual: '0',
-                stock_minimo: '0',
-              });
-              setMostrarFormulario(true);
-            }}
-            className="px-4 py-2 bg-brand-light text-white rounded-lg font-medium hover:bg-brand-dark"
+            onClick={() => setTabActiva('repuestos')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              tabActiva === 'repuestos'
+                ? 'border-brand text-brand'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
           >
-            + Nuevo Producto
+            🔩 Repuestos
           </button>
-        </div>
+          <button
+            onClick={() => setTabActiva('categorias')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              tabActiva === 'categorias'
+                ? 'border-brand text-brand'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            🏷️ Categorías
+          </button>
+          <button
+            onClick={() => setTabActiva('dispositivos')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              tabActiva === 'dispositivos'
+                ? 'border-brand text-brand'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            📱 Dispositivos
+          </button>
+        </nav>
       </div>
+
+      {/* Contenido según pestaña activa */}
+      {tabActiva === 'categorias' && <CategoriasAccesorios user={user} />}
+      {tabActiva === 'dispositivos' && <DispositivosRepuestos user={user} />}
+      {tabActiva === 'repuestos' && <DispositivosRepuestos user={user} />}
+
+      {tabActiva === 'accesorios' && (
+        <>
+          <div className="mb-6 flex justify-between items-center">
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setModoEscaneo(!modoEscaneo);
+                  setCodigoEscaneado('');
+                }}
+                className={`px-4 py-2 rounded-lg font-medium ${
+                  modoEscaneo
+                    ? 'bg-green-600 text-white'
+                    : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                }`}
+              >
+                {modoEscaneo ? '🟢 Modo Escaneo ON' : '⚪ Modo Escaneo OFF'}
+              </button>
+              <button
+                onClick={() => {
+                  setProductoEditando(null);
+                  setFormData({
+                    codigo_barras: '',
+                    nombre: '',
+                    categoria: '',
+                    categoria_id: '',
+                    marca: '',
+                    modelo: '',
+                    precio_venta: '',
+                    costo: '',
+                    stock_actual: '0',
+                    stock_minimo: '0',
+                  });
+                  setMostrarFormulario(true);
+                }}
+                className="px-4 py-2 bg-brand text-white rounded-lg font-medium hover:bg-brand-dark shadow-sm"
+              >
+                + Nuevo Accesorio
+              </button>
+            </div>
+          </div>
 
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
@@ -502,12 +595,44 @@ export default function ProductosStock({ user }: ProductosStockProps) {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Categoría</label>
+              <select
+                value={formData.categoria_id}
+                onChange={(e) => {
+                  const categoria = categorias.find(c => c.id === e.target.value);
+                  setFormData({
+                    ...formData,
+                    categoria_id: e.target.value,
+                    categoria: categoria?.nombre || '',
+                  });
+                }}
+                className="w-full px-3 py-2 border rounded"
+              >
+                <option value="">Seleccionar categoría...</option>
+                {categorias.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Marca</label>
               <input
                 type="text"
-                value={formData.categoria}
-                onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                value={formData.marca}
+                onChange={(e) => setFormData({ ...formData, marca: e.target.value })}
                 className="w-full px-3 py-2 border rounded"
-                placeholder="Ej: Fundas, Cables, etc."
+                placeholder="Ej: Apple, Samsung, etc."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Modelo</label>
+              <input
+                type="text"
+                value={formData.modelo}
+                onChange={(e) => setFormData({ ...formData, modelo: e.target.value })}
+                className="w-full px-3 py-2 border rounded"
+                placeholder="Ej: iPhone 13, Galaxy S24, etc."
               />
             </div>
             <div>
@@ -607,7 +732,12 @@ export default function ProductosStock({ user }: ProductosStockProps) {
                 >
                   <td className="px-2 sm:px-3 py-3 text-sm text-slate-600 truncate max-w-[100px] sm:max-w-none">{producto.codigo_barras || '-'}</td>
                   <td className="px-2 sm:px-3 py-3 text-sm font-medium text-slate-800 truncate max-w-[150px] sm:max-w-none">{producto.nombre}</td>
-                  <td className="px-2 sm:px-3 py-3 text-sm text-slate-600 hidden md:table-cell truncate max-w-[120px]">{producto.categoria || '-'}</td>
+                  <td className="px-2 sm:px-3 py-3 text-sm text-slate-600 hidden md:table-cell truncate max-w-[120px]">
+                    {producto.categoria || '-'}
+                    {producto.marca && producto.modelo && (
+                      <span className="block text-xs text-slate-400">{producto.marca} {producto.modelo}</span>
+                    )}
+                  </td>
                   <td className="px-2 sm:px-3 py-3 text-sm text-right font-medium text-slate-800 whitespace-nowrap">
                     {formatCurrency(producto.precio_venta)}
                   </td>
@@ -648,6 +778,9 @@ export default function ProductosStock({ user }: ProductosStockProps) {
                             codigo_barras: producto.codigo_barras || '',
                             nombre: producto.nombre,
                             categoria: producto.categoria || '',
+                            categoria_id: producto.categoria_id || '',
+                            marca: producto.marca || '',
+                            modelo: producto.modelo || '',
                             precio_venta: producto.precio_venta.toString(),
                             costo: producto.costo.toString(),
                             stock_actual: producto.stock_actual.toString(),
@@ -667,6 +800,8 @@ export default function ProductosStock({ user }: ProductosStockProps) {
             </tbody>
           </table>
         </div>
+      )}
+        </>
       )}
     </div>
   );

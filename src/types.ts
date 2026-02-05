@@ -94,6 +94,10 @@ export interface WorkOrder {
   paid_at?: string | null;
   warranty_days: number;
   warranty_expires_at?: string | null;
+  // Campos de firmas
+  cliente_signature_url?: string | null;
+  recibido_por_signature_url?: string | null;
+  recibido_por_nombre?: string | null;
   // Relaciones
   customer?: Customer;
   technician?: User;
@@ -136,6 +140,10 @@ export interface Producto {
   codigo_barras?: string | null;
   nombre: string;
   categoria?: string | null;
+  categoria_id?: string | null;
+  tipo: 'accesorio' | 'repuesto';
+  marca?: string | null;
+  modelo?: string | null;
   precio_venta: number;
   costo: number;
   stock_actual: number;
@@ -146,14 +154,32 @@ export interface Producto {
   updated_at: string;
 }
 
+export interface CajaDiaria {
+  id: string;
+  sucursal_id?: string | null;
+  usuario_id: string;
+  fecha: string;
+  caja_inicial: number;
+  caja_final?: number | null;
+  estado: 'abierta' | 'cerrada';
+  observaciones?: string | null;
+  created_at: string;
+  updated_at: string;
+  cerrada_at?: string | null;
+}
+
 export interface Venta {
   id: string;
   numero_venta: string;
   usuario_id: string;
   sucursal_id?: string | null;
+  customer_id?: string | null;
   total: number;
   metodo_pago: 'EFECTIVO' | 'TARJETA' | 'TRANSFERENCIA';
   estado: 'pendiente' | 'completada' | 'cancelada';
+  efectivo_recibido?: number | null;
+  vueltos?: number | null;
+  caja_diaria_id?: string | null;
   observaciones?: string | null;
   created_at: string;
   updated_at: string;
@@ -203,4 +229,72 @@ export interface ProductoStockBajo {
   stock_actual: number;
   stock_minimo: number;
   categoria?: string | null;
+}
+
+// ============================================
+// Tipos para Categorías de Accesorios
+// ============================================
+export interface CategoriaAccesorio {
+  id: string;
+  nombre: string;
+  descripcion?: string | null;
+  activa: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================
+// Tipos para Dispositivos y Repuestos
+// ============================================
+export interface Dispositivo {
+  id: string;
+  marca: string;
+  modelo: string;
+  tipo_dispositivo?: 'iphone' | 'ipad' | 'macbook' | 'apple_watch' | 'android' | 'laptop' | 'tablet' | 'consola' | 'otro' | null;
+  activo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Repuesto {
+  id: string;
+  dispositivo_id: string;
+  nombre: string;
+  precio_costo: number;
+  precio_venta: number;
+  stock_actual: number;
+  stock_minimo: number;
+  activo: boolean;
+  created_at: string;
+  updated_at: string;
+  dispositivo?: Dispositivo;
+}
+
+export interface OrderRepuesto {
+  id: string;
+  order_id: string;
+  repuesto_id?: string | null;
+  repuesto_nombre: string;
+  dispositivo_marca: string;
+  dispositivo_modelo: string;
+  cantidad: number;
+  precio_costo: number;
+  precio_venta: number;
+  subtotal: number;
+  created_at: string;
+  repuesto?: Repuesto;
+  order?: WorkOrder;
+}
+
+export interface RepuestoMovimiento {
+  id: string;
+  repuesto_id: string;
+  tipo_movimiento: 'venta' | 'compra' | 'ajuste' | 'inicial';
+  cantidad: number;
+  cantidad_anterior: number;
+  cantidad_nueva: number;
+  usuario_id?: string | null;
+  order_id?: string | null;
+  observaciones?: string | null;
+  created_at: string;
 }

@@ -1,11 +1,13 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".vercel/output",
+  "outputDirectory": "dist",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "astro",
-  "regions": ["iad1"],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
 }

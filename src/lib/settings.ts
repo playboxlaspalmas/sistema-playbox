@@ -10,11 +10,17 @@ export interface WarrantyConfig {
   policies: string[];
 }
 
+export interface RecibidoPorSignature {
+  signature_url: string;
+  nombre: string;
+}
+
 export interface SystemSettings {
   header_logo: LogoConfig;
   pdf_logo: LogoConfig;
   warranty_policies: WarrantyConfig;
   accessory_warranty_policies?: WarrantyConfig;
+  recibido_por_signature?: RecibidoPorSignature;
 }
 
 const defaultSettings: SystemSettings = {
@@ -35,6 +41,10 @@ const defaultSettings: SystemSettings = {
       "• Presentar boleta para hacer efectiva la garantía.",
       "• La garantía no cubre desgaste normal del producto.",
     ],
+  },
+  recibido_por_signature: {
+    signature_url: "",
+    nombre: "",
   },
 };
 

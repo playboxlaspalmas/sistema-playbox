@@ -3,8 +3,9 @@ import { supabase } from "@/lib/supabase";
 import { getSystemSettings, clearSettingsCache, type SystemSettings } from "@/lib/settings";
 import ChecklistEditor from "./ChecklistEditor";
 import ServicesEditor from "./ServicesEditor";
+import SignatureCanvas from "./SignatureCanvas";
 
-type TabType = "logos" | "checklists" | "services" | "warranties";
+type TabType = "logos" | "checklists" | "services" | "warranties" | "signatures";
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<TabType>("logos");
@@ -122,10 +123,10 @@ export default function Settings() {
       let pdfLogoUrl = settings.pdf_logo.url;
 
       if (headerLogoFile) {
-        headerLogoUrl = await uploadLogo(headerLogoFile, "header");
+        headerLogoUrl = await uploadLogo(headerLogoFile);
       }
       if (pdfLogoFile) {
-        pdfLogoUrl = await uploadLogo(pdfLogoFile, "pdf");
+        pdfLogoUrl = await uploadLogo(pdfLogoFile);
       }
 
       // Actualizar configuraciones
@@ -162,6 +163,17 @@ export default function Settings() {
           },
         },
       ];
+
+      // Agregar configuración de firma si estamos en la pestaña de firmas
+      if (activeTab === "signatures") {
+        updates.push({
+          setting_key: "recibido_por_signature",
+          setting_value: settings.recibido_por_signature || {
+            signature_url: "",
+            nombre: "",
+          },
+        });
+      }
 
       for (const update of updates) {
         const { error } = await supabase
@@ -274,6 +286,7 @@ export default function Settings() {
     { id: "checklists", label: "Checklists", icon: "✓" },
     { id: "services", label: "Servicios", icon: "🔧" },
     { id: "warranties", label: "Garantías", icon: "🛡️" },
+    { id: "signatures", label: "Firmas", icon: "✍️" },
   ];
 
   return (
@@ -291,8 +304,8 @@ export default function Settings() {
                 px-4 py-2 text-sm font-medium rounded-t-lg transition-colors
                 ${
                   activeTab === tab.id
-                    ? "bg-brand-light text-white border-b-2 border-brand-dark"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    ? "bg-brand text-white border-b-2 border-brand-dark"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                 }
               `}
             >
@@ -322,7 +335,7 @@ export default function Settings() {
                 type="file"
                 accept="image/*"
                 onChange={handleHeaderLogoChange}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-light file:text-white hover:file:bg-brand-dark"
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand file:text-white hover:file:bg-brand-dark file:shadow-sm"
               />
               {headerLogoPreview && (
                 <div className="mt-4">
@@ -400,7 +413,7 @@ export default function Settings() {
                 type="file"
                 accept="image/*"
                 onChange={handlePdfLogoChange}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-light file:text-white hover:file:bg-brand-dark"
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand file:text-white hover:file:bg-brand-dark file:shadow-sm"
               />
               {pdfLogoPreview && (
                 <div className="mt-4">
@@ -491,7 +504,7 @@ export default function Settings() {
                 <h3 className="text-lg font-semibold text-slate-900">Garantías de Servicio Técnico</h3>
                 <button
                   onClick={addWarrantyPolicy}
-                  className="px-3 py-1 text-sm bg-brand-light text-white rounded-md hover:bg-brand-dark"
+                  className="px-3 py-1 text-sm bg-brand text-white rounded-lg hover:bg-brand-dark shadow-sm"
                 >
                   + Agregar Política
                 </button>
@@ -525,7 +538,7 @@ export default function Settings() {
                 <h3 className="text-lg font-semibold text-slate-900">Garantías de Accesorios (POS)</h3>
                 <button
                   onClick={addAccessoryWarrantyPolicy}
-                  className="px-3 py-1 text-sm bg-brand-light text-white rounded-md hover:bg-brand-dark"
+                  className="px-3 py-1 text-sm bg-brand text-white rounded-lg hover:bg-brand-dark shadow-sm"
                 >
                   + Agregar Política
                 </button>
@@ -558,15 +571,66 @@ export default function Settings() {
             </div>
           </div>
         )}
+
+        {/* Pestaña: Firmas */}
+        {activeTab === "signatures" && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Firma de Quien Recibe</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                Configura la firma y nombre de la persona que recibe los equipos. Esta firma aparecerá en todas las órdenes de trabajo.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Nombre de Quien Recibe
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.recibido_por_signature?.nombre || ""}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        recibido_por_signature: {
+                          ...(settings.recibido_por_signature || { signature_url: "", nombre: "" }),
+                          nombre: e.target.value,
+                        },
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md"
+                    placeholder="Ej: Juan Pérez"
+                  />
+                </div>
+
+                <SignatureCanvas
+                  label="Firma de Quien Recibe"
+                  onSave={(dataUrl) => {
+                    setSettings({
+                      ...settings,
+                      recibido_por_signature: {
+                        ...(settings.recibido_por_signature || { signature_url: "", nombre: "" }),
+                        signature_url: dataUrl,
+                      },
+                    });
+                  }}
+                  initialImage={settings.recibido_por_signature?.signature_url || null}
+                  width={300}
+                  height={100}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Botón Guardar (solo visible en pestañas que requieren guardado) */}
-      {(activeTab === "logos" || activeTab === "warranties") && (
+      {(activeTab === "logos" || activeTab === "warranties" || activeTab === "signatures") && (
         <div className="flex justify-end mt-6 pt-6 border-t border-slate-200">
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-6 py-2 bg-brand-light text-white rounded-md hover:bg-brand-dark disabled:opacity-50"
+            className="px-6 py-2 bg-brand text-white rounded-lg hover:bg-brand-dark disabled:opacity-50 shadow-sm"
           >
             {saving ? "Guardando..." : "Guardar Configuración"}
           </button>

@@ -8,8 +8,11 @@ import CustomerSearch from "./CustomerSearch";
 import PatternDrawer from "./PatternDrawer";
 import ServiceSelector from "./ServiceSelector";
 import PDFPreview from "./PDFPreview";
+import SignatureCanvas from "./SignatureCanvas";
+import RepuestosSelector from "./RepuestosSelector";
 import { generatePDFBlob } from "@/lib/generate-pdf-blob";
 import { uploadPDFToStorage } from "@/lib/upload-pdf";
+import type { OrderRepuesto } from "@/types";
 
 interface OrderFormProps {
   technicianId: string;
@@ -66,6 +69,9 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   const [createdOrderServices, setCreatedOrderServices] = useState<Array<{ quantity: number; unit_price: number; total_price: number; service_name: string }>>([]);
   const [showDeviceCategoryModal, setShowDeviceCategoryModal] = useState<{ deviceId: string; deviceModel: string } | null>(null);
   const [pendingDeviceModel, setPendingDeviceModel] = useState("");
+  // Estados para firmas
+  const [clienteSignature, setClienteSignature] = useState<string>("");
+  const [repuestosSeleccionados, setRepuestosSeleccionados] = useState<OrderRepuesto[]>([]);
   
   // Referencias para sugerencias de dispositivos (una por equipo)
   const deviceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -415,6 +421,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         // Si falla, dejar null para que el trigger lo genere
       }
 
+      // Calcular costo total de repuestos
+      const totalRepuestosCost = repuestosSeleccionados.reduce((sum, r) => sum + r.subtotal, 0);
+      const totalReplacementCostConRepuestos = totalReplacementCost + totalRepuestosCost;
+
       const orderData: any = {
         order_number: orderNumber, // Generado o null (el trigger lo generará si es null)
         customer_id: selectedCustomer.id,
@@ -427,17 +437,17 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         device_unlock_code: firstDevice.unlockType === "code" ? firstDevice.deviceUnlockCode : null,
         problem_description: firstDevice.problemDescription,
         checklist_data: firstDevice.checklistData,
-        // Totales combinados de todos los equipos
-        replacement_cost: totalReplacementCost,
+        // Totales combinados de todos los equipos (incluyendo repuestos)
+        replacement_cost: totalReplacementCostConRepuestos,
         labor_cost: totalLaborCost,
-        total_repair_cost: totalRepairCost,
+        total_repair_cost: totalReplacementCostConRepuestos + totalLaborCost,
         priority,
         commitment_date: commitmentDate || null,
         warranty_days: warrantyDays,
         status: "en_proceso",
+        // Firmas
+        cliente_signature_url: clienteSignature || null,
         // Almacenar equipos adicionales en JSONB (si hay más de un equipo)
-        // Nota: Si el campo devices_data no existe en la BD, simplemente no se guardará
-        // pero el código seguirá funcionando con all_devices en memoria
         ...(additionalDevices.length > 0 ? { devices_data: additionalDevices } : {}),
       };
 
@@ -454,6 +464,23 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         .single();
 
       if (orderError) throw orderError;
+
+      // Guardar repuestos de la orden
+      if (repuestosSeleccionados.length > 0) {
+        for (const repuesto of repuestosSeleccionados) {
+          await supabase.from("order_repuestos").insert({
+            order_id: order.id,
+            repuesto_id: repuesto.repuesto_id || null,
+            repuesto_nombre: repuesto.repuesto_nombre,
+            dispositivo_marca: repuesto.dispositivo_marca,
+            dispositivo_modelo: repuesto.dispositivo_modelo,
+            cantidad: repuesto.cantidad,
+            precio_costo: repuesto.precio_costo,
+            precio_venta: repuesto.precio_venta,
+            subtotal: repuesto.subtotal,
+          });
+        }
+      }
 
       // Crear servicios de la orden para TODOS los equipos
       // Servicios del primer equipo
@@ -996,7 +1023,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
               <button
                 type="button"
                 onClick={() => setShowPatternDrawer({ deviceId: device.id })}
-                className="w-full px-4 py-2 border-2 border-dashed border-slate-300 rounded-md text-slate-600 hover:border-brand-light hover:text-brand-light transition-colors"
+                className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand hover:text-brand transition-colors"
               >
                 Dibujar Patrón
               </button>
@@ -1253,7 +1280,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         <button
           type="button"
           onClick={addNewDevice}
-          className="px-6 py-3 bg-brand-light text-white rounded-md hover:bg-brand-dark font-medium flex items-center gap-2"
+          className="px-6 py-3 bg-brand text-white rounded-lg hover:bg-brand-dark font-medium flex items-center gap-2 shadow-sm"
         >
           ➕ Agregar Otro Equipo
         </button>
@@ -1319,11 +1346,24 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
       </div>
 
+      {/* Selector de Repuestos */}
+      {devices.length > 0 && devices[0].deviceModel && (
+        <div className="border-t border-slate-200 pt-6">
+          <RepuestosSelector
+            dispositivoMarca={devices[0].deviceModel.split(' ')[0] || ''}
+            dispositivoModelo={devices[0].deviceModel}
+            onRepuestosChange={setRepuestosSeleccionados}
+            repuestosIniciales={repuestosSeleccionados}
+          />
+        </div>
+      )}
+
       {/* Total General - Suma de todos los equipos */}
       {(() => {
         const totalReplacementCost = devices.reduce((sum, device) => sum + device.replacementCost, 0);
         const totalServiceValue = devices.reduce((sum, device) => sum + getDeviceServiceTotal(device), 0);
-        const totalGeneral = totalReplacementCost + totalServiceValue;
+        const totalRepuestos = repuestosSeleccionados.reduce((sum, r) => sum + r.subtotal, 0);
+        const totalGeneral = totalReplacementCost + totalServiceValue + totalRepuestos;
         
         return (
           <div className="bg-slate-50 p-4 rounded space-y-2">
@@ -1339,6 +1379,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
                 {formatCLP(totalGeneral - (totalGeneral / 1.19))}
               </span>
             </div>
+            {totalRepuestos > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Repuestos:</span>
+                <span className="text-sm font-medium text-slate-700">
+                  {formatCLP(totalRepuestos)}
+                </span>
+              </div>
+            )}
             <div className="border-t border-slate-300 pt-2 mt-2">
               <div className="flex justify-between items-center">
                 <span className="text-lg font-medium text-slate-700">Total General ({devices.length} {devices.length === 1 ? 'equipo' : 'equipos'}):</span>
@@ -1350,6 +1398,30 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           </div>
         );
       })()}
+
+      {/* Firmas */}
+      <div className="border-t border-slate-200 pt-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-4">Firmas</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SignatureCanvas
+            label="Firma del Cliente"
+            onSave={setClienteSignature}
+            initialImage={clienteSignature || null}
+            width={250}
+            height={100}
+          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">
+              Firma de Quien Recibe
+            </label>
+            <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50">
+              <p className="text-sm text-slate-600">
+                La firma de quien recibe se configura en Configuración → Firmas y aparecerá automáticamente en el PDF.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Botones */}
       <div className="flex justify-end gap-4">
@@ -1363,7 +1435,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         <button
           type="submit"
           disabled={loading || isSubmitting || devices.some(device => device.problemDescription.length > MAX_DESCRIPTION_LENGTH)}
-          className="px-6 py-2 bg-brand-light text-white rounded-md hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-2 bg-brand text-white rounded-lg hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
         >
           {loading || isSubmitting ? "Guardando..." : `Crear Orden${devices.length > 1 ? ` (${devices.length} equipos)` : ''}`}
         </button>

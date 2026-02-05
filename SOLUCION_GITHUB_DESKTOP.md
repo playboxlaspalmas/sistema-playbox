@@ -1,159 +1,136 @@
-# 🔧 Solución: GitHub Desktop usa nombre antiguo del repositorio
+# 🔧 Solución: GitHub Desktop detecta repositorio de otro perfil
 
-## Problema Identificado
+## Problema
 
-Tu repositorio Git está configurado con el nombre antiguo:
-- **Remoto actual**: `https://github.com/mimotocursor-lang/sistema-gestion-ordenes.git`
-- **Nombre nuevo**: `sistema-gestion-orden`
+GitHub Desktop muestra que estás agregando el repositorio `sistema-gestion-orden` de otro perfil de GitHub, pero tu carpeta se llama `sistema-playbox`.
 
-GitHub Desktop está intentando usar el repositorio antiguo que probablemente fue eliminado o renombrado.
+## Causa
 
-## ✅ Solución Rápida
+El problema es que hay referencias antiguas en la configuración de Git que apuntan a otro repositorio y usuario.
 
-### Opción 1: Actualizar Remoto al Nuevo Nombre (Recomendado)
+## Solución Rápida
 
-Si ya creaste un nuevo repositorio en GitHub con el nombre `sistema-gestion-orden`:
+### Opción 1: Usar el Script Automático (Recomendado)
+
+1. Abre PowerShell en la carpeta `sistema-playbox`
+2. Ejecuta:
+   ```powershell
+   .\fix-git-config.ps1
+   ```
+3. Ingresa tu usuario de GitHub cuando se solicite
+4. Sigue las instrucciones que aparecen
+
+### Opción 2: Solución Manual
+
+#### Paso 1: Verificar configuración actual
+
+Abre PowerShell en la carpeta `sistema-playbox` y ejecuta:
 
 ```powershell
-cd sistema-gestion-orden
-
-# Ver remoto actual
 git remote -v
-
-# Actualizar remoto al nuevo nombre
-git remote set-url origin https://github.com/mimotocursor-lang/sistema-gestion-orden.git
-
-# Verificar
-git remote -v
-
-# Ahora debería mostrar:
-# origin  https://github.com/mimotocursor-lang/sistema-gestion-orden.git (fetch)
-# origin  https://github.com/mimotocursor-lang/sistema-gestion-orden.git (push)
 ```
 
-### Opción 2: Crear Nuevo Repositorio y Actualizar Remoto
+Si muestra algo como `sistema-gestion-orden` o un usuario diferente, continúa con el paso 2.
 
-Si NO has creado el repositorio nuevo en GitHub:
+#### Paso 2: Eliminar remoto antiguo
 
-1. **Crear repositorio en GitHub:**
-   - Ve a [GitHub](https://github.com) → "New repository"
-   - Nombre: `sistema-gestion-orden` (sin la "s" final)
-   - NO marques README, .gitignore ni license
-   - Crea el repositorio
-
-2. **Actualizar remoto local:**
 ```powershell
-cd sistema-gestion-orden
-
-# Eliminar remoto antiguo
 git remote remove origin
+```
 
-# Agregar nuevo remoto
-git remote add origin https://github.com/mimotocursor-lang/sistema-gestion-orden.git
+#### Paso 3: Agregar nuevo remoto con tu usuario
 
-# Verificar
+Reemplaza `TU-USUARIO` con tu usuario de GitHub:
+
+```powershell
+git remote add origin https://github.com/TU-USUARIO/sistema-playbox.git
+```
+
+#### Paso 4: Verificar
+
+```powershell
 git remote -v
 ```
 
-3. **Hacer push:**
-```powershell
-git branch -M main
-git push -u origin main
+Debería mostrar:
+```
+origin  https://github.com/TU-USUARIO/sistema-playbox.git (fetch)
+origin  https://github.com/TU-USUARIO/sistema-playbox.git (push)
 ```
 
-### Opción 3: Renombrar Repositorio en GitHub (Si el antiguo existe)
+#### Paso 5: Crear repositorio en GitHub (si no existe)
 
-Si el repositorio antiguo `sistema-gestion-ordenes` todavía existe:
+1. Ve a: https://github.com/new
+2. Nombre del repositorio: `sistema-playbox`
+3. Selecciona Privado o Público
+4. **NO** inicialices con README, .gitignore o licencia
+5. Haz clic en "Create repository"
 
-1. Ve a tu repositorio en GitHub: `https://github.com/mimotocursor-lang/sistema-gestion-ordenes`
-2. Ve a **Settings** → **General** → Scroll hasta **Repository name**
-3. Cambia el nombre de `sistema-gestion-ordenes` a `sistema-gestion-orden`
-4. Confirma el cambio
-
-Luego actualiza el remoto local:
-```powershell
-cd sistema-gestion-orden
-git remote set-url origin https://github.com/mimotocursor-lang/sistema-gestion-orden.git
-git remote -v
-```
-
-## 🔄 Actualizar GitHub Desktop
-
-Después de actualizar el remoto:
+#### Paso 6: Reiniciar GitHub Desktop
 
 1. **Cierra GitHub Desktop completamente**
 2. **Abre GitHub Desktop nuevamente**
-3. **Selecciona tu repositorio** `sistema-gestion-orden`
-4. GitHub Desktop debería detectar el nuevo remoto automáticamente
-5. Intenta hacer "Publish branch" nuevamente
+3. Ve a **File** → **Add Local Repository**
+4. Selecciona la carpeta `sistema-playbox`
+5. GitHub Desktop debería detectar el remoto correctamente
 
-Si GitHub Desktop sigue mostrando el nombre antiguo:
+## Verificar que todo está correcto
 
-1. En GitHub Desktop, ve a **Repository** → **Repository Settings**
-2. Verifica que la URL del remoto sea: `https://github.com/mimotocursor-lang/sistema-gestion-orden.git`
-3. Si está mal, cámbiala manualmente
-
-## 🧪 Verificar Configuración
-
-Ejecuta estos comandos para verificar:
+### En PowerShell:
 
 ```powershell
-cd sistema-gestion-orden
-
-# Ver remoto
+# Verificar remoto
 git remote -v
 
-# Ver branch actual
-git branch
-
-# Ver estado
-git status
+# Verificar nombre del proyecto
+cat package.json | Select-String "name"
 ```
 
-**Debería mostrar:**
-- Remoto: `https://github.com/mimotocursor-lang/sistema-gestion-orden.git`
-- Branch: `main` (o `master`)
+Debería mostrar:
+- Remoto: `https://github.com/TU-USUARIO/sistema-playbox.git`
+- Nombre: `"sistema-playbox"`
 
-## ⚠️ Si el Repositorio Antiguo Fue Eliminado
+### En GitHub Desktop:
 
-Si el repositorio `sistema-gestion-ordenes` fue eliminado de GitHub:
+1. Ve a **Repository** → **Repository Settings** → **Remote**
+2. Debería mostrar: `https://github.com/TU-USUARIO/sistema-playbox.git`
 
-1. **Crea un nuevo repositorio** con el nombre `sistema-gestion-orden`
-2. **Actualiza el remoto** como se muestra arriba
-3. **Haz push** del código
+## Si el problema persiste
 
-## 📝 Comandos Completos (Todo en Uno)
-
-Si quieres hacer todo de una vez:
+### Limpiar completamente la configuración de Git:
 
 ```powershell
-cd sistema-gestion-orden
+# Eliminar carpeta .git (CUIDADO: Esto elimina el historial local)
+Remove-Item -Recurse -Force .git
 
-# Actualizar remoto
-git remote set-url origin https://github.com/mimotocursor-lang/sistema-gestion-orden.git
+# Reinicializar Git
+git init
+
+# Agregar todos los archivos
+git add .
+
+# Hacer commit inicial
+git commit -m "Initial commit"
+
+# Agregar remoto
+git remote add origin https://github.com/TU-USUARIO/sistema-playbox.git
 
 # Verificar
 git remote -v
-
-# Asegurar que estás en main
-git branch -M main
-
-# Hacer push (si el repositorio ya existe en GitHub)
-git push -u origin main
-
-# O si es la primera vez y necesitas crear el repositorio primero:
-# 1. Crea el repositorio en GitHub
-# 2. Luego ejecuta: git push -u origin main
 ```
 
-## 🎯 Resumen
+Luego en GitHub Desktop:
+1. File → Add Local Repository
+2. Selecciona la carpeta `sistema-playbox`
+3. Debería funcionar correctamente
 
-**El problema:** GitHub Desktop está usando el remoto antiguo `sistema-gestion-ordenes`
+## Archivos Corregidos
 
-**La solución:** Actualizar el remoto a `sistema-gestion-orden`
+- ✅ `package.json` - Nombre actualizado a `sistema-playbox`
+- ✅ Script `fix-git-config.ps1` creado para automatizar la corrección
 
-**Pasos:**
-1. ✅ Actualizar remoto: `git remote set-url origin https://github.com/mimotocursor-lang/sistema-gestion-orden.git`
-2. ✅ Verificar: `git remote -v`
-3. ✅ Reiniciar GitHub Desktop
-4. ✅ Intentar "Publish branch" nuevamente
+## Notas Importantes
+
+- El nombre de la carpeta (`sistema-playbox`) y el nombre en `package.json` ahora coinciden
+- Asegúrate de que el repositorio existe en GitHub antes de hacer push
+- Si el repositorio no existe, créalo primero en GitHub antes de intentar hacer push

@@ -23,6 +23,9 @@ export default function POS({ user }: POSProps) {
   const [error, setError] = useState<string | null>(null);
   const [mostrarPago, setMostrarPago] = useState(false);
   const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | 'TRANSFERENCIA'>('EFECTIVO');
+  const [efectivoRecibido, setEfectivoRecibido] = useState<string>('');
+  const [vueltos, setVueltos] = useState<number>(0);
+  const [cajaAbierta, setCajaAbierta] = useState<any>(null);
   const [busquedaManual, setBusquedaManual] = useState('');
   const [productosEncontrados, setProductosEncontrados] = useState<Producto[]>([]);
   const [buscando, setBuscando] = useState(false);
@@ -40,6 +43,40 @@ export default function POS({ user }: POSProps) {
 
   // Calcular total del carrito
   const total = carrito.reduce((sum, item) => sum + item.subtotal, 0);
+
+  // Cargar caja abierta del día
+  useEffect(() => {
+    async function cargarCajaAbierta() {
+      try {
+        const { data, error } = await supabase
+          .rpc('get_caja_abierta_hoy', { p_sucursal_id: user.sucursal_id || null });
+
+        if (error) {
+          console.error('Error cargando caja:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          setCajaAbierta(data[0]);
+        }
+      } catch (err) {
+        console.error('Error cargando caja:', err);
+      }
+    }
+
+    cargarCajaAbierta();
+  }, [user.sucursal_id]);
+
+  // Calcular vueltos cuando cambia el efectivo recibido
+  useEffect(() => {
+    if (metodoPago === 'EFECTIVO' && efectivoRecibido) {
+      const recibido = parseFloat(efectivoRecibido) || 0;
+      const vueltosCalculados = recibido >= total ? recibido - total : 0;
+      setVueltos(vueltosCalculados);
+    } else {
+      setVueltos(0);
+    }
+  }, [efectivoRecibido, total, metodoPago]);
 
   // Función para buscar producto por código de barras
   const buscarProductoPorCodigo = useCallback(async (codigoBarras: string): Promise<Producto | null> => {
@@ -364,7 +401,20 @@ export default function POS({ user }: POSProps) {
         }
       }
 
-      // Actualizar venta con total, estado y cliente
+      // Validar efectivo recibido si es pago en efectivo
+      let efectivoRecibidoFinal: number | null = null;
+      let vueltosFinal: number | null = null;
+      
+      if (metodoPago === 'EFECTIVO') {
+        const recibido = parseFloat(efectivoRecibido) || 0;
+        if (recibido < total) {
+          throw new Error(`El efectivo recibido (${formatCurrency(recibido)}) es menor al total (${formatCurrency(total)})`);
+        }
+        efectivoRecibidoFinal = recibido;
+        vueltosFinal = recibido - total;
+      }
+
+      // Actualizar venta con total, estado, cliente y datos de efectivo
       const { error: ventaError } = await supabase
         .from('ventas')
         .update({
@@ -372,6 +422,9 @@ export default function POS({ user }: POSProps) {
           metodo_pago: metodoPago,
           estado: 'completada',
           customer_id: clienteIdFinal,
+          efectivo_recibido: efectivoRecibidoFinal,
+          vueltos: vueltosFinal,
+          caja_diaria_id: cajaAbierta?.id || null,
         })
         .eq('id', ventaActual.id);
 
@@ -413,6 +466,8 @@ export default function POS({ user }: POSProps) {
       setCarrito([]);
       setVentaActual(null);
       setMostrarPago(false);
+      setEfectivoRecibido('');
+      setVueltos(0);
       setError(null);
 
       // Cargar datos del cliente si existe
@@ -561,16 +616,14 @@ export default function POS({ user }: POSProps) {
   }, [loading, buscarProductoPorCodigo, agregarAlCarrito]);
 
   return (
-    <div className="bg-brand-dark-lighter border border-brand-dark-border-gold rounded-lg shadow-medium p-6" style={{
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
-    }}>
+    <div className="bg-white border border-gray-200 rounded-lg shadow-md p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-brand mb-2">Punto de Venta (POS)</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Punto de Venta (POS)</h2>
         {ventaActual && (
-          <p className="text-brand-gold-400">Venta: {ventaActual.numero_venta}</p>
+          <p className="text-gray-600">Venta: {ventaActual.numero_venta}</p>
         )}
         {error && (
-          <div className="mt-2 p-3 bg-red-900/30 border border-red-600 text-red-300 rounded">
+          <div className="mt-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg">
             {error}
           </div>
         )}
@@ -578,7 +631,7 @@ export default function POS({ user }: POSProps) {
 
       {/* Búsqueda manual de productos */}
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-brand-gold-400 mb-3">Buscar Producto</h3>
+        <h3 className="text-lg font-semibold text-gray-700 mb-3">Buscar Producto</h3>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             ref={inputBusquedaRef}
@@ -615,12 +668,12 @@ export default function POS({ user }: POSProps) {
                 return false;
               }
             }}
-            className="flex-1 px-3 sm:px-4 py-2 sm:py-3 border-2 border-brand-dark-border bg-brand-dark rounded-lg focus:ring-2 focus:ring-brand focus:border-brand text-base sm:text-lg text-brand-dark-text"
+            className="flex-1 px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 bg-white rounded-lg focus:ring-2 focus:ring-brand focus:border-brand text-base sm:text-lg text-gray-900"
             data-barcode-scanner="enabled"
           />
           <button
             onClick={() => buscarProductosManual(busquedaManual)}
-            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-brand text-brand-dark rounded-lg font-semibold hover:bg-brand-light disabled:opacity-50 font-bold transition-colors whitespace-nowrap shadow-gold"
+            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-brand text-white rounded-lg font-semibold hover:bg-brand-dark disabled:opacity-50 transition-colors whitespace-nowrap shadow-sm"
             disabled={buscando || !busquedaManual}
           >
             {buscando ? 'Buscando...' : 'Buscar'}
@@ -629,11 +682,11 @@ export default function POS({ user }: POSProps) {
 
         {/* Lista de productos encontrados */}
         {productosEncontrados.length > 0 && (
-          <div className="mt-3 max-h-48 overflow-y-auto border border-brand-dark-border-gold rounded-lg bg-brand-dark">
+          <div className="mt-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white">
             {productosEncontrados.map((producto) => (
               <div
                 key={producto.id}
-                className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b border-brand-dark-border hover:bg-brand-dark-lighter cursor-pointer transition-colors gap-2 sm:gap-0"
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors gap-2 sm:gap-0"
                 onClick={() => {
                   if (producto.stock_actual <= 0) {
                     setError(`Sin stock: ${producto.nombre}`);
@@ -645,8 +698,8 @@ export default function POS({ user }: POSProps) {
                 }}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-brand-dark-text truncate">{producto.nombre}</p>
-                  <p className="text-xs sm:text-sm text-brand-gold-400 truncate">
+                  <p className="font-medium text-gray-900 truncate">{producto.nombre}</p>
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">
                     {producto.codigo_barras && `Código: ${producto.codigo_barras} • `}
                     Stock: {producto.stock_actual} • {formatCurrency(producto.precio_venta)}
                   </p>
@@ -662,7 +715,7 @@ export default function POS({ user }: POSProps) {
                     setBusquedaManual('');
                     setProductosEncontrados([]);
                   }}
-                  className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-brand text-brand-dark rounded hover:bg-brand-light disabled:opacity-50 font-bold transition-colors whitespace-nowrap shadow-gold"
+                  className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-dark disabled:opacity-50 transition-colors whitespace-nowrap shadow-sm"
                   disabled={producto.stock_actual <= 0}
                 >
                   Agregar
@@ -675,9 +728,9 @@ export default function POS({ user }: POSProps) {
 
       {/* Carrito de productos */}
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-brand-gold-400 mb-3">Productos en Carrito</h3>
+        <h3 className="text-lg font-semibold text-gray-700 mb-3">Productos en Carrito</h3>
         {carrito.length === 0 ? (
-          <div className="text-center py-8 text-brand-gold-400">
+          <div className="text-center py-8 text-gray-600">
             <p className="text-lg mb-2">Escanea o busca productos para comenzar</p>
             <p className="text-sm">La pistola de código de barras funciona desde cualquier lugar</p>
             <p className="text-sm">O busca productos por nombre o código arriba</p>
@@ -687,11 +740,11 @@ export default function POS({ user }: POSProps) {
             {carrito.map((item) => (
               <div
                 key={item.producto.id}
-                className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-brand-dark rounded border border-brand-dark-border-gold gap-3"
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-gray-50 rounded border border-gray-200 gap-3"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-brand-dark-text truncate">{item.producto.nombre}</p>
-                  <p className="text-xs sm:text-sm text-brand-gold-400">
+                  <p className="font-medium text-gray-900 truncate">{item.producto.nombre}</p>
+                  <p className="text-xs sm:text-sm text-gray-600">
                     {formatCurrency(item.precio_unitario)} c/u
                   </p>
                 </div>
@@ -710,7 +763,7 @@ export default function POS({ user }: POSProps) {
                       onChange={(e) =>
                         actualizarCantidad(item.producto.id, parseInt(e.target.value) || 0)
                       }
-                      className="w-16 sm:w-20 text-center border border-brand-dark-border bg-brand-dark-lighter rounded px-2 py-1 text-brand-dark-text text-base sm:text-lg"
+                      className="w-16 sm:w-20 text-center border border-gray-300 bg-white rounded-lg px-2 py-1 text-gray-900 text-base sm:text-lg"
                       min="1"
                       disabled={loading}
                     />
@@ -737,7 +790,7 @@ export default function POS({ user }: POSProps) {
       {/* Total y botones */}
       <div className="border-t border-brand-gold-600 pt-4">
         <div className="flex justify-between items-center mb-4">
-          <span className="text-xl font-bold text-brand-gold-400">Total:</span>
+          <span className="text-xl font-bold text-gray-900">Total:</span>
           <span className="text-2xl font-bold text-brand">{formatCurrency(total)}</span>
         </div>
 
@@ -767,7 +820,7 @@ export default function POS({ user }: POSProps) {
         ) : (
           <div className="space-y-4">
             {/* Opción de registrar cliente */}
-            <div className="bg-brand-dark-lighter border border-brand-dark-border-gold rounded-lg p-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -781,7 +834,7 @@ export default function POS({ user }: POSProps) {
                   }}
                   className="w-5 h-5 text-brand"
                 />
-                <span className="text-sm font-medium text-brand-gold-400">
+                <span className="text-sm font-medium text-gray-700">
                   Registrar cliente para esta venta
                 </span>
               </label>
@@ -793,46 +846,52 @@ export default function POS({ user }: POSProps) {
                     placeholder="Nombre del cliente"
                     value={clienteData.name}
                     onChange={(e) => setClienteData({ ...clienteData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-brand-dark-border bg-brand-dark rounded text-brand-dark-text"
+                    className="w-full px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-900"
                   />
                   <input
                     type="text"
                     placeholder="RUT (opcional)"
                     value={clienteData.rut_document}
                     onChange={(e) => setClienteData({ ...clienteData, rut_document: e.target.value })}
-                    className="w-full px-3 py-2 border border-brand-dark-border bg-brand-dark rounded text-brand-dark-text"
+                    className="w-full px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-900"
                   />
                   <input
                     type="tel"
                     placeholder="Teléfono (opcional)"
                     value={clienteData.phone}
                     onChange={(e) => setClienteData({ ...clienteData, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-brand-dark-border bg-brand-dark rounded text-brand-dark-text"
+                    className="w-full px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-900"
                   />
                   <input
                     type="email"
                     placeholder="Email (opcional)"
                     value={clienteData.email}
                     onChange={(e) => setClienteData({ ...clienteData, email: e.target.value })}
-                    className="w-full px-3 py-2 border border-brand-dark-border bg-brand-dark rounded text-brand-dark-text"
+                    className="w-full px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-900"
                   />
                 </div>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-brand-gold-400 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Método de Pago
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {(['EFECTIVO', 'TARJETA', 'TRANSFERENCIA'] as const).map((metodo) => (
                   <button
                     key={metodo}
-                    onClick={() => setMetodoPago(metodo)}
+                    onClick={() => {
+                      setMetodoPago(metodo);
+                      if (metodo !== 'EFECTIVO') {
+                        setEfectivoRecibido('');
+                        setVueltos(0);
+                      }
+                    }}
                     className={`py-2 px-4 rounded-lg font-medium transition-colors text-sm sm:text-base ${
                       metodoPago === metodo
-                        ? 'bg-brand text-brand-dark font-bold shadow-gold-lg'
-                        : 'bg-brand-dark border border-brand-dark-border-gold text-brand-gold-400 hover:bg-brand-dark-lighter'
+                        ? 'bg-brand text-white font-semibold shadow-sm'
+                        : 'bg-gray-100 border border-gray-300 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
                     {metodo}
@@ -840,17 +899,71 @@ export default function POS({ user }: POSProps) {
                 ))}
               </div>
             </div>
+
+            {/* Campo de efectivo recibido si es pago en efectivo */}
+            {metodoPago === 'EFECTIVO' && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Efectivo Recibido
+                </label>
+                <input
+                  type="number"
+                  value={efectivoRecibido}
+                  onChange={(e) => setEfectivoRecibido(e.target.value)}
+                  placeholder="0"
+                  min={total}
+                  step="100"
+                  className="w-full px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-900 text-lg font-semibold focus:ring-2 focus:ring-brand focus:border-brand"
+                />
+                {efectivoRecibido && parseFloat(efectivoRecibido) > 0 && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Total a pagar:</span>
+                      <span className="text-lg font-bold text-gray-900">{formatCurrency(total)}</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-sm text-gray-600">Efectivo recibido:</span>
+                      <span className="text-lg font-bold text-gray-900">{formatCurrency(parseFloat(efectivoRecibido) || 0)}</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200">
+                      <span className="text-base font-semibold text-gray-700">Vueltos:</span>
+                      <span className={`text-xl font-bold ${vueltos > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                        {formatCurrency(vueltos)}
+                      </span>
+                    </div>
+                    {parseFloat(efectivoRecibido) < total && (
+                      <p className="text-sm text-red-600 mt-2">
+                        ⚠️ El efectivo recibido es menor al total
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Alerta si no hay caja abierta */}
+            {!cajaAbierta && metodoPago === 'EFECTIVO' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ No hay caja abierta para hoy. Las ventas en efectivo no se registrarán en la caja.
+                </p>
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={finalizarVenta}
-                className="flex-1 py-3 bg-brand text-brand-dark rounded-lg font-bold hover:bg-brand-light disabled:opacity-50 transition-colors shadow-gold-lg text-base sm:text-lg"
-                disabled={loading}
+                className="flex-1 py-3 bg-brand text-white rounded-lg font-semibold hover:bg-brand-dark disabled:opacity-50 transition-colors shadow-sm text-base sm:text-lg"
+                disabled={loading || (metodoPago === 'EFECTIVO' && (!efectivoRecibido || parseFloat(efectivoRecibido) < total))}
               >
                 Confirmar Pago
               </button>
               <button
-                onClick={() => setMostrarPago(false)}
-                className="w-full sm:w-auto px-4 sm:px-6 py-3 bg-brand-dark-lighter border border-brand-dark-border-gold text-brand-gold-400 rounded-lg font-semibold hover:bg-brand-dark transition-colors whitespace-nowrap"
+                onClick={() => {
+                  setMostrarPago(false);
+                  setEfectivoRecibido('');
+                  setVueltos(0);
+                }}
+                className="w-full sm:w-auto px-4 sm:px-6 py-3 bg-gray-100 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors whitespace-nowrap"
                 disabled={loading}
               >
                 Volver

@@ -126,16 +126,10 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center" style={{
-      background: 'linear-gradient(135deg, #121212 0%, #1e1e1e 50%, #1a1a1a 100%)',
-      backgroundAttachment: 'fixed'
-    }}>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
       <form
         onSubmit={onLogin}
-        className="max-w-md w-full bg-brand-dark-lighter border border-brand-dark-border-gold p-8 rounded-lg space-y-6 backdrop-blur-sm"
-        style={{
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(212, 175, 55, 0.1)'
-        }}
+        className="max-w-md w-full bg-white border border-gray-200 p-8 rounded-xl space-y-6 shadow-lg"
       >
         <div className="text-center">
           <img 
@@ -143,22 +137,22 @@ export default function Login() {
             alt="Tec-Solution Logo" 
             className="h-56 w-auto mx-auto mb-4 object-contain"
           />
-          <h2 className="text-2xl font-bold text-brand mb-2">Sistema de Gestión de Órdenes</h2>
-          <p className="text-brand-gold-400">Tec-Solution - Servicio Especializado</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Sistema de Gestión de Órdenes</h2>
+          <p className="text-gray-600">Tec-Solution - Servicio Especializado</p>
         </div>
 
         {err && (
-          <div className="bg-red-900/30 border border-red-600 text-red-300 px-4 py-3 rounded-md text-sm">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
             {err}
           </div>
         )}
 
         <div>
-          <label className="block text-sm font-medium text-brand-gold-400 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Email
           </label>
           <input
-            className="w-full border-2 border-brand-black-border bg-brand-black rounded-md px-3 py-2 text-brand-black-text focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
+            className="w-full border border-gray-300 bg-white rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
             type="email"
             placeholder="tu@email.com"
             value={email}
@@ -168,11 +162,11 @@ export default function Login() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-brand-gold-400 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Contraseña
           </label>
           <input
-            className="w-full border-2 border-brand-black-border bg-brand-black rounded-md px-3 py-2 text-brand-black-text focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
+            className="w-full border border-gray-300 bg-white rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
             type="password"
             placeholder="••••••••"
             value={pass}
@@ -184,7 +178,7 @@ export default function Login() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-brand hover:bg-brand-light text-brand-black font-bold rounded-md py-3 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-brand/50 hover:shadow-brand/70"
+          className="w-full bg-brand hover:bg-brand-dark text-white font-semibold rounded-lg py-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
         >
           {loading ? "Ingresando..." : "Entrar"}
         </button>

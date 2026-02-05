@@ -1,177 +1,122 @@
-# Sistema de Gestión de Órdenes de Servicio Técnico
+# Sistema Playbox - Gestión de Órdenes de Servicio
 
-Sistema completo de gestión de órdenes de trabajo para servicio técnico especializado en dispositivos Apple.
+Sistema completo de gestión para talleres de reparación de dispositivos móviles y electrónicos.
 
-## 🚀 Tecnologías
+## Características Principales
 
-- **Astro** - Framework web
-- **React** - UI components
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **Supabase** - Backend (Auth + Database)
-- **Vercel** - Deployment
+- ✅ Gestión de órdenes de servicio con múltiples equipos
+- ✅ Sistema de stock separado (Accesorios y Repuestos)
+- ✅ Punto de venta (POS) con código de barras
+- ✅ Gestión de caja diaria con control de efectivo
+- ✅ Reportes de ventas en PDF
+- ✅ Gestión masiva de stock
+- ✅ Control de inventario y movimientos
+- ✅ Sistema de firmas digitales en órdenes
+- ✅ Dashboard con métricas en tiempo real
 
-## 📋 Requisitos Previos
+## Tecnologías
 
-- Node.js 18+
-- npm o yarn
-- Cuenta de Supabase
-- Cuenta de GitHub (para deploy)
-- Cuenta de Vercel (para deploy)
+- **Frontend**: Astro + React + TypeScript
+- **Estilos**: Tailwind CSS
+- **Base de Datos**: Supabase (PostgreSQL)
+- **PDF**: jsPDF
+- **Deploy**: Vercel
 
-## 🛠️ Instalación Local
+## Configuración Inicial
 
-1. **Clonar el repositorio:**
+### 1. Clonar el repositorio
+
 ```bash
-git clone https://github.com/tu-usuario/sistema-gestion-orden.git
-cd sistema-gestion-orden
+git clone https://github.com/tu-usuario/sistema-playbox.git
+cd sistema-playbox
 ```
 
-2. **Instalar dependencias:**
+### 2. Instalar dependencias
+
 ```bash
 npm install
 ```
 
-3. **Configurar variables de entorno:**
-```bash
-# Copiar el archivo de ejemplo
-cp .env.example .env.local
+### 3. Configurar variables de entorno
 
-# Editar .env.local con tus valores reales
-# Ver .env.example para más detalles
+Crea un archivo `.env` basado en `.env.example`:
+
+```env
+PUBLIC_SUPABASE_URL=tu_url_de_supabase
+PUBLIC_SUPABASE_ANON_KEY=tu_clave_anonima_de_supabase
 ```
 
-**Variables requeridas:**
-- `PUBLIC_SUPABASE_URL` - URL de tu proyecto Supabase
-- `PUBLIC_SUPABASE_ANON_KEY` - Anon key de Supabase
-- `PUBLIC_SUPABASE_SERVICE_ROLE_KEY` - Service role key (opcional, para operaciones del servidor)
-- `RESEND_API_KEY` - API key de Resend (opcional, para envío de emails)
+### 4. Configurar la base de datos
 
-4. **Configurar la base de datos:**
-   - Ve a tu proyecto en Supabase
-   - Abre el SQL Editor
-   - Ejecuta el contenido de `database/schema_completo.sql`
+Ejecuta los siguientes scripts SQL en orden:
 
-5. **Ejecutar en desarrollo:**
+1. `database/setup_completo.sql` - Crea toda la estructura de la base de datos
+2. `database/migracion_stock_repuestos.sql` - Migración de stock y repuestos
+3. `database/migracion_caja_reportes.sql` - Migración de caja y reportes
+4. `database/crear_usuarios_iniciales.sql` - Crea usuarios iniciales (opcional)
+
+### 5. Ejecutar en desarrollo
+
 ```bash
 npm run dev
 ```
 
-La aplicación estará disponible en `http://localhost:4321`
-
-## 🚀 Deploy a Vercel
-
-### Opción 1: Deploy desde GitHub (Recomendado)
-
-1. **Subir código a GitHub:**
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/tu-usuario/sistema-gestion-orden.git
-git push -u origin main
-```
-
-2. **Conectar con Vercel:**
-   - Ve a [Vercel](https://vercel.com) e inicia sesión
-   - Haz clic en **"Add New Project"**
-   - Importa tu repositorio de GitHub
-   - Vercel detectará automáticamente que es un proyecto Astro
-
-3. **Configurar Variables de Entorno en Vercel:**
-   - Ve a **Settings → Environment Variables**
-   - Agrega todas las variables de `.env.example`
-   - Marca todas para **Production**, **Preview** y **Development**
-
-4. **Deploy:**
-   - Haz clic en **"Deploy"**
-   - Vercel construirá y desplegará automáticamente
-
-### Opción 2: Deploy con Vercel CLI
-
-```bash
-# Instalar Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel
-
-# Para producción
-vercel --prod
-```
-
-**Ver guía completa:** [DEPLOY.md](./DEPLOY.md)
-
-## 📦 Build para Producción
+### 6. Build para producción
 
 ```bash
 npm run build
 ```
 
-El build se generará en `.vercel/output`
+## Despliegue en Vercel
 
-## 🧪 Verificar Build Localmente
+1. Conecta tu repositorio de GitHub con Vercel
+2. Configura las variables de entorno en Vercel:
+   - `PUBLIC_SUPABASE_URL`
+   - `PUBLIC_SUPABASE_ANON_KEY`
+3. Vercel detectará automáticamente el framework Astro
+4. El despliegue se realizará automáticamente en cada push a la rama principal
 
-```bash
-npm run preview
+## Estructura del Proyecto
+
 ```
-
-## 📁 Estructura del Proyecto
-
-```
-/
+sistema-playbox/
 ├── src/
-│   ├── components/      # Componentes Astro
-│   ├── layouts/         # Layouts Astro
-│   ├── lib/            # Utilidades (supabase, date, currency, etc.)
-│   ├── pages/          # Páginas Astro
-│   ├── react/          # Componentes React
-│   │   └── components/ # Componentes React individuales
-│   ├── styles/         # Estilos globales
-│   └── types.ts        # Tipos TypeScript
-├── database/
-│   └── schema.sql      # Esquema de base de datos
-└── public/             # Archivos estáticos
+│   ├── react/
+│   │   ├── components/     # Componentes React
+│   │   ├── Dashboard.tsx    # Dashboard principal
+│   │   └── Login.tsx        # Página de login
+│   ├── lib/                 # Utilidades y funciones
+│   ├── styles/              # Estilos globales
+│   └── pages/               # Páginas Astro
+├── database/                # Scripts SQL
+├── public/                  # Archivos estáticos
+└── package.json
 ```
 
-## 🗄️ Base de Datos
+## Funcionalidades Clave
 
-**IMPORTANTE**: Este sistema está diseñado para usar la **MISMA base de datos de Supabase** que el sistema de reparaciones existente (`sistema-reparaciones`).
+### Gestión de Stock
 
-### Tablas Nuevas
-- `customers` - Clientes
-- `services` - Servicios de reparación
-- `device_checklist_items` - Items de checklist por tipo de dispositivo
-- `work_orders` - Órdenes de trabajo
-- `order_services` - Relación orden-servicios
-- `order_notes` - Notas de órdenes
+- **Accesorios**: Categorizados (fundas, cargadores, micas, cables, etc.)
+- **Repuestos**: Asociados a dispositivos específicos
+- **Gestión masiva**: Importación desde CSV o creación múltiple
 
-### Tablas Compartidas
-- `branches` - Sucursales (compartida, se agregan campos nuevos si no existen)
-- `users` - Usuarios del sistema (compartida)
+### Sistema de Caja
 
-**Ver documentación completa**: `database/USO_BASE_DATOS.md` y `INSTRUCCIONES_SETUP.md`
+- Apertura y cierre de caja diaria
+- Control de efectivo recibido y vueltos
+- Cálculo automático de caja final
 
-## 👥 Tipos de Usuario
+### Reportes
 
-- **Admin**: Acceso completo al sistema
-- **Técnico**: Crear y gestionar sus propias órdenes
-- **Encargado**: Gestionar su sucursal
-- **Recepcionista**: Ver y buscar información
+- Reportes por día, semana, mes o rango personalizado
+- Exportación a PDF
+- Desglose por método de pago
 
-## 📝 Notas
+## Licencia
 
-- Las semanas de comisión van de sábado a viernes
-- El sistema incluye autocompletado inteligente para dispositivos Apple
-- Checklist dinámico según tipo de dispositivo
-- Sistema de prioridades con colores
-- Generación de PDFs para órdenes
-- Integración con WhatsApp
+Este proyecto es privado y de uso interno.
 
-## 🔒 Seguridad
+## Soporte
 
-- Row Level Security (RLS) habilitado en Supabase
-- Los usuarios solo ven lo que tienen permiso
-- Autenticación manejada por Supabase Auth
-
+Para problemas o consultas, contacta al equipo de desarrollo.

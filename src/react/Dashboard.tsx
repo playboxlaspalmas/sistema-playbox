@@ -18,6 +18,9 @@ import POS from "./components/POS";
 import ProductosStock from "./components/ProductosStock";
 import VentasMetricas from "./components/VentasMetricas";
 import VentasList from "./components/VentasList";
+import CajaManager from "./components/CajaManager";
+import SalesReports from "./components/SalesReports";
+import BulkStockManager from "./components/BulkStockManager";
 
 function Header({ 
   userName, 
@@ -64,16 +67,14 @@ function Header({
   const hasSidebar = userRole === "admin" || userRole === "encargado" || userRole === "technician" || userRole === "recepcionista";
 
   return (
-    <header className="bg-brand-dark border-b border-brand-dark-border-gold shadow-medium fixed top-0 left-0 right-0 z-30" style={{
-      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(212, 175, 55, 0.1)'
-    }}>
+    <header className="bg-white border-b border-gray-200 shadow-sm fixed top-0 left-0 right-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           <div className="flex items-center gap-2 sm:gap-4">
             {hasSidebar && onMenuToggle && (
               <button
                 onClick={onMenuToggle}
-                className="lg:hidden text-brand p-2 hover:bg-brand-dark-lighter rounded-md transition-colors"
+                className="lg:hidden text-gray-700 p-2 hover:bg-gray-100 rounded-md transition-colors"
                 aria-label="Abrir menú"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,10 +101,10 @@ function Header({
               }}
             />
             <div className="hidden sm:block">
-              <h1 className="text-base sm:text-lg font-bold text-brand">
+              <h1 className="text-base sm:text-lg font-bold text-gray-900">
                 Sistema de Gestión de Órdenes
               </h1>
-              <p className="text-xs text-brand-gold-400">
+              <p className="text-xs text-gray-600">
                 {branchName 
                   ? `Sucursal: ${branchName}`
                   : `${userName} • ${userRole === "admin" ? "Administrador" : userRole === "encargado" ? "Encargado" : userRole === "recepcionista" ? "Recepcionista" : "Técnico"}`
@@ -111,14 +112,14 @@ function Header({
               </p>
             </div>
             <div className="sm:hidden">
-              <h1 className="text-sm font-bold text-brand truncate max-w-[150px]">
+              <h1 className="text-sm font-bold text-gray-900 truncate max-w-[150px]">
                 {branchName ? `Sucursal: ${branchName}` : userName}
               </h1>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-brand-black bg-brand border-2 border-brand rounded-md hover:bg-brand-light transition-colors whitespace-nowrap font-bold"
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-brand rounded-lg hover:bg-brand-dark transition-colors whitespace-nowrap shadow-sm"
           >
             Cerrar Sesión
           </button>
@@ -379,11 +380,20 @@ export default function Dashboard() {
       case "pos":
         return <POS user={user} />;
       case "productos-stock":
-        return <ProductosStock user={user} />;
+        return (
+          <div className="space-y-6">
+            <ProductosStock user={user} />
+            <BulkStockManager user={user} />
+          </div>
+        );
       case "ventas":
         return <VentasList user={user} />;
       case "ventas-metricas":
         return <VentasMetricas />;
+      case "caja":
+        return <CajaManager user={user} />;
+      case "reportes-ventas":
+        return <SalesReports user={user} />;
       default:
         return <AdminDashboard user={user} onNewOrder={() => setSection("new-order")} />;
     }
@@ -401,7 +411,7 @@ export default function Dashboard() {
     canAccessSection(user, "reports");
 
   return (
-    <div className="min-h-screen bg-brand-dark-light pt-20">
+    <div className="min-h-screen bg-gray-50 pt-20">
       <Header 
         userName={user.name} 
         userRole={user.role}

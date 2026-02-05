@@ -78,6 +78,20 @@ export function canAccessSection(user: User | null, section: string): boolean {
       // Todos los usuarios autenticados pueden ver métricas básicas
       return true;
     
+    case "caja":
+      // Usuarios con permisos de ventas pueden gestionar caja
+      return hasPermission(user, "create_orders") === true || 
+             user.role === "admin" ||
+             user.role === "encargado" ||
+             user.role === "recepcionista";
+    
+    case "reportes-ventas":
+      // Usuarios con permisos de ventas pueden ver reportes
+      return hasPermission(user, "create_orders") === true || 
+             user.role === "admin" ||
+             user.role === "encargado" ||
+             user.role === "recepcionista";
+    
     default:
       return false;
   }

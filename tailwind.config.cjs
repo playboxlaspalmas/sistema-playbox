@@ -5,33 +5,33 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#d4af37", // Dorado principal
-          light: "#f4d03f", // Dorado claro (hover, highlights)
-          dark: "#b8860b", // Dorado oscuro (botones activos)
-          gold: {
-            50: "#fef9e7",
-            100: "#fef3c7",
-            200: "#fde68a",
-            300: "#fcd34d",
-            400: "#f4d03f", // Dorado claro
-            500: "#d4af37", // Dorado principal
-            600: "#b8860b", // Dorado oscuro
-            700: "#9a7209",
-            800: "#7c5d07",
-            900: "#5e4805",
+          DEFAULT: "#1877F2", // Facebook Blue principal
+          light: "#42A5F5", // Azul claro (hover, highlights)
+          dark: "#166FE5", // Azul oscuro (botones activos)
+          blue: {
+            50: "#E3F2FD",
+            100: "#BBDEFB",
+            200: "#90CAF9",
+            300: "#64B5F6",
+            400: "#42A5F5", // Azul claro
+            500: "#1877F2", // Facebook Blue principal
+            600: "#166FE5", // Azul oscuro
+            700: "#1565C0",
+            800: "#0D47A1",
+            900: "#0A3D91",
           },
-          // Paleta de negros sofisticados con profundidad
+          // Paleta de grises para fondos (estilo Facebook)
           dark: {
-            DEFAULT: "#121212", // Fondo principal (no 100% negro)
-            light: "#1e1e1e", // Fondos secundarios
-            lighter: "#2a2a2a", // Elementos elevados
-            lightest: "#363636", // Elementos más elevados
-            border: "#3a3a3a", // Bordes sutiles
-            "border-light": "#4a4a4a", // Bordes más visibles
-            "border-gold": "#5a4a2a", // Bordes con toque dorado
-            text: "#e8e8e8", // Texto principal
-            "text-light": "#f5f5f5", // Texto destacado
-            "text-muted": "#a0a0a0", // Texto secundario
+            DEFAULT: "#F0F2F5", // Fondo principal (gris muy claro estilo Facebook)
+            light: "#FFFFFF", // Fondos secundarios (blanco)
+            lighter: "#FFFFFF", // Elementos elevados (blanco)
+            lightest: "#FFFFFF", // Elementos más elevados (blanco)
+            border: "#CCCCCC", // Bordes sutiles
+            "border-light": "#E4E6EB", // Bordes más visibles (gris claro)
+            "border-gold": "#1877F2", // Bordes azules
+            text: "#050505", // Texto principal (casi negro)
+            "text-light": "#65676B", // Texto destacado (gris)
+            "text-muted": "#8A8D91", // Texto secundario (gris más claro)
           },
           white: "#FFFFFF"
         }

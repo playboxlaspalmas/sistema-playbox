@@ -1116,7 +1116,8 @@ export async function generatePDFBlob(
   
   // Calcular espacio disponible para garantías (asegurando que el cuadro de firma siempre quepa)
   // IMPORTANTE: Usar TODO el espacio REAL disponible, especialmente cuando hay un solo equipo
-  const minSeparationForSignature = 2; // Separación MÍNIMA entre garantías y firma (reducido)
+  const minSeparationForSignature = 2; // Separación MÍNIMA entre garantías y firmas (reducido)
+  // Las dos firmas están lado a lado, así que solo necesitamos el espacio de una firma en altura
   const spaceForSignature = sigBoxHeight + signatureTextSpacing + sigTextHeight + minSeparationForSignature + bottomMargin;
   // Calcular el espacio disponible REAL - usar TODO el espacio disponible
   const calculatedAvailableHeight = pageHeight - warrantyPanelStartY - warrantyTitleHeight - warrantyPaddingTop - warrantyPaddingBottom - spaceForSignature;
@@ -1447,45 +1448,83 @@ export async function generatePDFBlob(
   
   yPosition = finalMaxY;
 
-  // === FIRMA - Posicionar al final absoluto de la hoja ===
-  const signatureBoxWidth = 50;
+  // === FIRMAS - Posicionar al final absoluto de la hoja ===
+  // Dos firmas lado a lado: Cliente y Quien Recibe
+  const signatureBoxWidth = 45;
+  const signatureSpacing = 20; // Espacio entre las dos firmas
+  const totalSignaturesWidth = (signatureBoxWidth * 2) + signatureSpacing;
   
-  // Calcular posición de la firma: al final absoluto de la página
-  // La firma debe estar lo más abajo posible, respetando solo el margen mínimo
+  // Calcular posición de las firmas: al final absoluto de la página
   const signatureBoxY = pageHeight - sigBoxHeight - signatureTextSpacing - sigTextHeight - bottomMargin;
   
-  // Verificar que la firma NO se monte sobre las garantías
+  // Verificar que las firmas NO se monten sobre las garantías
   const warrantyEndY = warrantyPanelStartY + warrantyPanelHeight;
   const requiredSeparation = minSeparationForSignature;
   
   if (signatureBoxY < warrantyEndY + requiredSeparation) {
-    // Si esto pasa, FORZAR que la firma esté después de las garantías
-    console.error("[PDF] ERROR CRÍTICO: Las garantías se están montando sobre la firma!");
+    console.error("[PDF] ERROR CRÍTICO: Las garantías se están montando sobre las firmas!");
     console.error(`[PDF] warrantyEndY: ${warrantyEndY}, signatureBoxY: ${signatureBoxY}, requiredSeparation: ${requiredSeparation}`);
-    // Ajustar la posición de la firma para que esté después de las garantías
-    const adjustedSignatureY = warrantyEndY + requiredSeparation;
-    if (adjustedSignatureY + sigBoxHeight + signatureTextSpacing + sigTextHeight <= pageHeight - bottomMargin) {
-      // Solo ajustar si cabe en la página
-      console.warn(`[PDF] Ajustando posición de firma de ${signatureBoxY} a ${adjustedSignatureY}`);
-      // Nota: No podemos cambiar signatureBoxY aquí porque ya se calculó arriba
-      // Pero podemos verificar que el cálculo fue correcto
-    } else {
-      console.error("[PDF] ERROR: No hay espacio para la firma después de las garantías!");
-    }
   }
   
-  const signatureBoxX = (pageWidth - signatureBoxWidth) / 2;
+  // Calcular posición X para centrar ambas firmas
+  const signaturesStartX = (pageWidth - totalSignaturesWidth) / 2;
+  
+  // Cargar configuración de firma de quien recibe
+  const recibidoPorSignature = settings.recibido_por_signature || { signature_url: "", nombre: "" };
+  
+  // === FIRMA DEL CLIENTE (izquierda) ===
+  const clienteSignatureX = signaturesStartX;
   doc.setFillColor(230, 230, 230);
   doc.setDrawColor(150, 150, 150);
   doc.setLineWidth(0.5);
-  doc.rect(signatureBoxX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
+  doc.rect(clienteSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
+  
+  // Si hay firma del cliente guardada, mostrarla
+  if (order.cliente_signature_url) {
+    try {
+      const img = new Image();
+      img.src = order.cliente_signature_url;
+      doc.addImage(img, 'PNG', clienteSignatureX + 2, signatureBoxY + 2, signatureBoxWidth - 4, sigBoxHeight - 4);
+    } catch (err) {
+      console.warn("[PDF] Error cargando firma del cliente:", err);
+    }
+  }
+  
   doc.setFontSize(7);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(0, 0, 0);
-  const signatureText = "FIRMA DEL CLIENTE";
-  const signatureTextWidth = doc.getTextWidth(signatureText);
-  const signatureTextY = signatureBoxY + sigBoxHeight + 5; // Aumentado de 2 a 5 para dar espacio al texto
-  doc.text(signatureText, signatureBoxX + (signatureBoxWidth - signatureTextWidth) / 2, signatureTextY);
+  const clienteSignatureText = "FIRMA DEL CLIENTE";
+  const clienteSignatureTextWidth = doc.getTextWidth(clienteSignatureText);
+  const clienteSignatureTextY = signatureBoxY + sigBoxHeight + 5;
+  doc.text(clienteSignatureText, clienteSignatureX + (signatureBoxWidth - clienteSignatureTextWidth) / 2, clienteSignatureTextY);
+  
+  // === FIRMA DE QUIEN RECIBE (derecha) ===
+  const recibidoPorSignatureX = signaturesStartX + signatureBoxWidth + signatureSpacing;
+  doc.setFillColor(230, 230, 230);
+  doc.setDrawColor(150, 150, 150);
+  doc.setLineWidth(0.5);
+  doc.rect(recibidoPorSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
+  
+  // Si hay firma de quien recibe guardada, mostrarla
+  if (order.recibido_por_signature_url || recibidoPorSignature.signature_url) {
+    try {
+      const signatureUrl = order.recibido_por_signature_url || recibidoPorSignature.signature_url;
+      const img = new Image();
+      img.src = signatureUrl;
+      doc.addImage(img, 'PNG', recibidoPorSignatureX + 2, signatureBoxY + 2, signatureBoxWidth - 4, sigBoxHeight - 4);
+    } catch (err) {
+      console.warn("[PDF] Error cargando firma de quien recibe:", err);
+    }
+  }
+  
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  const recibidoPorNombre = order.recibido_por_nombre || recibidoPorSignature.nombre || "QUIEN RECIBE";
+  const recibidoPorText = recibidoPorNombre.length > 20 ? recibidoPorNombre.substring(0, 20) : recibidoPorNombre;
+  const recibidoPorTextWidth = doc.getTextWidth(recibidoPorText);
+  const recibidoPorTextY = signatureBoxY + sigBoxHeight + 5;
+  doc.text(recibidoPorText, recibidoPorSignatureX + (signatureBoxWidth - recibidoPorTextWidth) / 2, recibidoPorTextY);
 
   // Retornar blob
   return doc.output("blob");
