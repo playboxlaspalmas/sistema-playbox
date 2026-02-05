@@ -36,6 +36,7 @@ export interface Branch {
   login_email?: string | null;
   password_hash?: string | null;
   is_active?: boolean | null;
+  permissions?: UserPermissions | null;
   created_at: string;
   updated_at: string;
 }

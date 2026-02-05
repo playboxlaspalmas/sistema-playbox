@@ -781,38 +781,139 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
         orderServicesWithDescription
       );
 
-      // Convertir PDF a base64
-      const pdfBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = (reader.result as string).split(',')[1]; // Remover el prefijo data:application/pdf;base64,
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(pdfBlob);
-      });
+      // EXACTAMENTE como en el proyecto de referencia:
+      // Intentar subir PDF a Supabase Storage primero
+      let pdfUrl: string | null = null;
+      let pdfBase64: string | null = null;
+      
+      try {
+        console.log("[ORDERS TABLE] Intentando subir PDF a Supabase Storage...");
+        const { uploadPDFToStorage } = await import('@/lib/upload-pdf');
+        pdfUrl = await uploadPDFToStorage(pdfBlob, order.order_number);
+        if (pdfUrl) {
+          console.log("[ORDERS TABLE] PDF subido exitosamente a:", pdfUrl);
+        } else {
+          console.warn("[ORDERS TABLE] No se pudo subir PDF a Storage, usando base64 como fallback");
+          // Si no se pudo subir, generar base64 como fallback
+          pdfBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(pdfBlob);
+          });
+        }
+      } catch (uploadError) {
+        console.warn("[ORDERS TABLE] Error subiendo PDF a Storage, intentando adjuntar:", uploadError);
+        // Si falla la subida, convertir a base64 como fallback
+        try {
+          pdfBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(pdfBlob);
+          });
+        } catch (base64Error) {
+          console.error("[ORDERS TABLE] Error generando base64:", base64Error);
+        }
+      }
+      
+      // Asegurarse de que tenemos al menos uno de los dos
+      if (!pdfUrl && !pdfBase64) {
+        console.error("[ORDERS TABLE] No se pudo generar ni URL ni base64 del PDF");
+        // Intentar generar base64 una vez más como último recurso
+        try {
+          pdfBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(pdfBlob);
+          });
+        } catch (finalError) {
+          console.error("[ORDERS TABLE] Error final generando base64:", finalError);
+        }
+      }
 
-      // Enviar email
-      const emailResponse = await fetch('/api/send-order-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: order.customer.email,
-          customerName: order.customer.name,
-          orderNumber: order.order_number,
-          pdfBase64: pdfBase64,
-          branchName: branchData?.name || branchData?.razon_social || order.sucursal?.name || order.sucursal?.razon_social,
-          branchEmail: branchData?.email || order.sucursal?.email,
-          branchPhone: branchData?.phone || order.sucursal?.phone,
-          branchAddress: branchData?.address || order.sucursal?.address,
-          emailType: 'order_created',
-        }),
-      });
+      // Preparar body del request - EXACTAMENTE como en el proyecto de referencia
+      const requestBody = {
+        to: order.customer.email,
+        customerName: order.customer.name,
+        orderNumber: order.order_number,
+        pdfBase64: pdfBase64, // Puede ser null si se subió a storage
+        pdfUrl: pdfUrl, // URL del PDF si se subió exitosamente
+        branchName: branchData?.name || branchData?.razon_social || order.sucursal?.name || order.sucursal?.razon_social,
+        branchEmail: branchData?.email || order.sucursal?.email,
+      };
+
+      // Verificar tamaño del body antes de enviar
+      const bodyString = JSON.stringify(requestBody);
+      const bodySize = new Blob([bodyString]).size;
+      
+      console.log("[ORDERS TABLE] ========================================");
+      console.log("[ORDERS TABLE] Preparando envío de email:");
+      console.log("[ORDERS TABLE] Tamaño del body:", bodySize, "bytes (", (bodySize / 1024).toFixed(2), "KB)");
+      console.log("[ORDERS TABLE] Tiene pdfUrl:", !!pdfUrl);
+      console.log("[ORDERS TABLE] Tiene pdfBase64:", !!pdfBase64, pdfBase64 ? `(tamaño: ${pdfBase64Size} bytes)` : "");
+      console.log("[ORDERS TABLE] ========================================");
+      
+      const maxSize = 4 * 1024 * 1024; // 4MB límite de Vercel
+      if (bodySize > maxSize) {
+        console.error("[ORDERS TABLE] ERROR: Body del request demasiado grande:", bodySize, "bytes");
+        alert(`❌ Error: El body del request es demasiado grande (${(bodySize / 1024).toFixed(2)} KB). Por favor, contacta al administrador.`);
+        setResendingEmail(null);
+        return;
+      }
+
+      // Enviar email SOLO con pdfUrl (nunca con pdfBase64 para evitar error 413)
+      console.log("[ORDERS TABLE] Enviando request a /api/send-order-email...");
+      let emailResponse;
+      try {
+        emailResponse = await fetch('/api/send-order-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: bodyString,
+        });
+      } catch (fetchError: any) {
+        console.error("[ORDERS TABLE] Error en fetch:", fetchError);
+        throw new Error(`Error de red al enviar email: ${fetchError.message || 'Error desconocido'}`);
+      }
+
+      console.log("[ORDERS TABLE] Response status:", emailResponse.status, emailResponse.statusText);
 
       if (!emailResponse.ok) {
-        const errorData = await emailResponse.json().catch(() => ({ error: 'Error desconocido' }));
+        // Si es error 413, el body puede estar vacío o no ser JSON
+        if (emailResponse.status === 413) {
+          console.error("[ORDERS TABLE] ERROR 413: Request body demasiado grande");
+          console.error("[ORDERS TABLE] Body size que se intentó enviar:", bodySize, "bytes");
+          throw new Error(`El request es demasiado grande (${(bodySize / 1024).toFixed(2)} KB). Vercel rechazó el request antes de llegar al endpoint.`);
+        }
+        
+        let errorData: any = { error: 'Error desconocido' };
+        try {
+          const text = await emailResponse.text();
+          console.error("[ORDERS TABLE] Response text:", text);
+          if (text) {
+            try {
+              errorData = JSON.parse(text);
+            } catch {
+              errorData = { error: text || `Error ${emailResponse.status}` };
+            }
+          }
+        } catch (parseError) {
+          console.error("[ORDERS TABLE] Error parseando respuesta:", parseError);
+          errorData = { error: `Error ${emailResponse.status}: ${emailResponse.statusText}` };
+        }
+        
         const errorMessage = errorData.error || 'Error al enviar email';
         
         // Si el error es sobre el dominio de prueba, mostrar mensaje más útil
@@ -929,7 +1030,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md p-6 min-h-[600px]">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
         <h2 className="text-xl font-bold text-slate-900">Órdenes de Trabajo</h2>
         <div className="flex gap-2">

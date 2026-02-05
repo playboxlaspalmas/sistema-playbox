@@ -62,6 +62,8 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   const [priority, setPriority] = useState<"baja" | "media" | "urgente">("media");
   const [commitmentDate, setCommitmentDate] = useState("");
   const [warrantyDays, setWarrantyDays] = useState(30);
+  const [warrantyValue, setWarrantyValue] = useState(30);
+  const [warrantyUnit, setWarrantyUnit] = useState<"dias" | "meses">("dias");
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false); // Protección contra múltiples submits
   const [showPDFPreview, setShowPDFPreview] = useState(false);
@@ -740,6 +742,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
             orderServicesForPDF // Pasar orderServices para que el PDF tenga la misma información detallada
           );
 
+          // EXACTAMENTE como en el proyecto de referencia:
           // Intentar subir PDF a Supabase Storage primero
           let pdfUrl: string | null = null;
           let pdfBase64: string | null = null;
@@ -1352,15 +1355,44 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">
-            Garantía (días)
+            Garantía
           </label>
-          <input
-            type="number"
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={warrantyDays}
-            onChange={(e) => setWarrantyDays(parseInt(e.target.value) || 30)}
-            min="0"
-          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              className="flex-1 border border-slate-300 rounded-md px-3 py-2"
+              value={warrantyValue}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                setWarrantyValue(val);
+                // Calcular días automáticamente
+                if (warrantyUnit === "meses") {
+                  setWarrantyDays(val * 30);
+                } else {
+                  setWarrantyDays(val);
+                }
+              }}
+              min="0"
+              placeholder="Cantidad"
+            />
+            <select
+              className="border border-slate-300 rounded-md px-3 py-2"
+              value={warrantyUnit}
+              onChange={(e) => {
+                const unit = e.target.value as "dias" | "meses";
+                setWarrantyUnit(unit);
+                // Recalcular días
+                if (unit === "meses") {
+                  setWarrantyDays(warrantyValue * 30);
+                } else {
+                  setWarrantyDays(warrantyValue);
+                }
+              }}
+            >
+              <option value="dias">Días</option>
+              <option value="meses">Meses</option>
+            </select>
+          </div>
         </div>
       </div>
 

@@ -4,6 +4,11 @@ import { getSystemSettings } from "../../lib/settings";
 
 const resendApiKey = import.meta.env.RESEND_API_KEY;
 
+// Configurar límite de tamaño del body para Vercel
+export const config = {
+  maxDuration: 30, // 30 segundos máximo
+};
+
 export const POST: APIRoute = async ({ request }) => {
   // Logging inmediato para verificar que la función se ejecuta
   console.log("[EMAIL API] ========================================");
@@ -24,7 +29,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const resend = new Resend(resendApiKey);
 
-    // Cargar configuración del sistema para obtener el logo
+    // Cargar configuración del sistema para obtener el logo - EXACTAMENTE como en el proyecto de referencia
     const settings = await getSystemSettings();
     let logoDataUrl = "";
     try {
@@ -36,8 +41,7 @@ export const POST: APIRoute = async ({ request }) => {
         let logoUrl = settings.header_logo.url;
         if (!logoUrl.startsWith("http")) {
           // Si es relativa, construir URL completa usando el dominio de producción
-          // En producción, usar el dominio real; en desarrollo, usar localhost
-          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://app.playbox.cl";
+          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://sistema-playbox.vercel.app";
           logoUrl = `${baseUrl}${logoUrl.startsWith("/") ? "" : "/"}${logoUrl}`;
         }
         
@@ -65,7 +69,23 @@ export const POST: APIRoute = async ({ request }) => {
       // Continuar sin logo si hay error
     }
 
-    const body = await request.json();
+    // Leer el body directamente como JSON
+    // Si el request es muy grande, Vercel lo rechazará antes de llegar aquí (error 413)
+    // IMPORTANTE: Si el error 413 ocurre aquí, significa que el body es demasiado grande
+    let body;
+    try {
+      body = await request.json();
+    } catch (error: any) {
+      console.error("[EMAIL API] ERROR al parsear JSON del body:", error);
+      // Si el error es por tamaño, Vercel ya habrá rechazado el request antes
+      return new Response(
+        JSON.stringify({ 
+          error: "Error al procesar el request body. Puede ser demasiado grande.",
+          details: error.message
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
     const { 
       to, 
       customerName, 
@@ -84,9 +104,23 @@ export const POST: APIRoute = async ({ request }) => {
       orderNumber,
       emailType,
       hasPdfBase64: !!pdfBase64,
+      pdfBase64Size: pdfBase64 ? pdfBase64.length : 0,
       hasPdfUrl: !!pdfUrl,
       branchName: branchName || 'no especificado'
     });
+    
+    // Si se está enviando pdfBase64 y es muy grande, rechazar
+    if (pdfBase64 && pdfBase64.length > 3 * 1024 * 1024) {
+      console.error("[EMAIL API] ERROR: pdfBase64 demasiado grande:", pdfBase64.length, "bytes");
+      return new Response(
+        JSON.stringify({ 
+          error: "pdfBase64 demasiado grande. Por favor, sube el PDF a storage y envía solo pdfUrl.",
+          hint: "El PDF debe subirse a Supabase Storage antes de enviar el email.",
+          size: pdfBase64.length
+        }),
+        { status: 413, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     if (!to || !orderNumber) {
       return new Response(
@@ -95,12 +129,22 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    // PDF (base64 o URL) es requerido para order_created
-    if (emailType === 'order_created' && !pdfBase64 && !pdfUrl) {
+    // PDF (URL preferida, base64 como fallback) es requerido para order_created
+    // Preferir pdfUrl sobre pdfBase64 para evitar error 413
+    if (emailType === 'order_created' && !pdfUrl && !pdfBase64) {
       return new Response(
-        JSON.stringify({ error: "pdfBase64 o pdfUrl es requerido para order_created" }),
+        JSON.stringify({ error: "pdfUrl o pdfBase64 es requerido para order_created" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
+    }
+    
+    // Si tenemos pdfBase64 pero no pdfUrl, advertir que puede causar error 413
+    if (emailType === 'order_created' && pdfBase64 && !pdfUrl) {
+      const base64Size = pdfBase64.length;
+      const maxSafeSize = 3 * 1024 * 1024; // 3MB
+      if (base64Size > maxSafeSize) {
+        console.warn("[EMAIL API] ADVERTENCIA: pdfBase64 es muy grande (", base64Size, "bytes). Se recomienda usar pdfUrl para evitar error 413.");
+      }
     }
 
     // Email de origen: Configuración desde variables de entorno
@@ -365,14 +409,13 @@ export const POST: APIRoute = async ({ request }) => {
                   </div>
                 </div>
                 
+                <p>En el archivo PDF adjunto encontrará todos los detalles de su orden, incluyendo:</p>
                 ${pdfUrl ? `
-                  <p>Puede descargar el PDF con todos los detalles de su orden haciendo clic en el siguiente enlace:</p>
+                  <p style="margin-top: 10px;">También puede descargar el PDF haciendo clic en el siguiente enlace:</p>
                   <div style="text-align: center; margin: 20px 0;">
                     <a href="${pdfUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">📄 Descargar PDF de la Orden</a>
                   </div>
-                ` : `
-                  <p>En el archivo PDF adjunto encontrará todos los detalles de su orden, incluyendo:</p>
-                `}
+                ` : ''}
                 <ul>
                   <li>Información del equipo ingresado</li>
                   <li>Servicios solicitados</li>
@@ -428,6 +471,7 @@ export const POST: APIRoute = async ({ request }) => {
       ],
     };
 
+    // EXACTAMENTE como en el proyecto de referencia:
     // Solo adjuntar PDF si está disponible en base64 (no si tenemos URL)
     // Si tenemos URL, el PDF ya está disponible para descarga y no necesitamos adjuntarlo
     if (pdfBase64 && !pdfUrl && emailType === 'order_created') {

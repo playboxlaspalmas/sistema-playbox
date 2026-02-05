@@ -37,6 +37,11 @@ export default function ProductosStock({ user }: ProductosStockProps) {
     stock_actual: '',
     stock_minimo: '',
   });
+  const [categoriaInput, setCategoriaInput] = useState('');
+  const [categoriaSuggestions, setCategoriaSuggestions] = useState<CategoriaAccesorio[]>([]);
+  const [showCategoriaSuggestions, setShowCategoriaSuggestions] = useState(false);
+  const categoriaInputRef = useRef<HTMLInputElement>(null);
+  const categoriaSuggestionsRef = useRef<HTMLDivElement>(null);
 
   // Cargar categorías
   const cargarCategorias = useCallback(async () => {
@@ -92,6 +97,23 @@ export default function ProductosStock({ user }: ProductosStockProps) {
       cargarCategorias();
     }
   }, [cargarProductos, cargarCategorias, tabActiva]);
+
+  // Cerrar sugerencias de categoría al hacer click fuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        categoriaInputRef.current &&
+        categoriaSuggestionsRef.current &&
+        !categoriaInputRef.current.contains(event.target as Node) &&
+        !categoriaSuggestionsRef.current.contains(event.target as Node)
+      ) {
+        setShowCategoriaSuggestions(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Interceptar eventos de teclado para prevenir acciones no deseadas del navegador
   useEffect(() => {
@@ -181,11 +203,15 @@ export default function ProductosStock({ user }: ProductosStockProps) {
           codigo_barras: productoExistente.codigo_barras || '',
           nombre: productoExistente.nombre,
           categoria: productoExistente.categoria || '',
+          categoria_id: productoExistente.categoria_id || '',
+          marca: productoExistente.marca || '',
+          modelo: productoExistente.modelo || '',
           precio_venta: productoExistente.precio_venta.toString(),
           costo: productoExistente.costo.toString(),
           stock_actual: productoExistente.stock_actual.toString(),
           stock_minimo: productoExistente.stock_minimo.toString(),
         });
+        setCategoriaInput(productoExistente.categoria || '');
         setMostrarFormulario(true);
       } else {
         // Si no existe, crear nuevo con código escaneado
@@ -233,11 +259,39 @@ export default function ProductosStock({ user }: ProductosStockProps) {
         return;
       }
 
+      // Si hay una categoría escrita pero no existe, crearla primero
+      let categoriaIdFinal = formData.categoria_id;
+      if (categoriaInput && categoriaInput.trim() && !formData.categoria_id) {
+        // Buscar si existe con el nombre exacto (case insensitive)
+        const categoriaExistente = categorias.find(
+          cat => cat.nombre.toLowerCase() === categoriaInput.trim().toLowerCase()
+        );
+        
+        if (categoriaExistente) {
+          categoriaIdFinal = categoriaExistente.id;
+        } else {
+          // Crear nueva categoría
+          const { data: nuevaCategoria, error: catError } = await supabase
+            .from('categorias_accesorios')
+            .insert({
+              nombre: categoriaInput.trim(),
+              activa: true,
+            })
+            .select()
+            .single();
+
+          if (catError) throw catError;
+          categoriaIdFinal = nuevaCategoria.id;
+          // Recargar categorías
+          await cargarCategorias();
+        }
+      }
+
       const datos = {
         codigo_barras: formData.codigo_barras && formData.codigo_barras.trim() !== '' ? formData.codigo_barras.trim() : null,
         nombre: formData.nombre.trim(),
-        categoria: formData.categoria && formData.categoria.trim() !== '' ? formData.categoria.trim() : null,
-        categoria_id: formData.categoria_id || null,
+        categoria: categoriaInput && categoriaInput.trim() !== '' ? categoriaInput.trim() : null,
+        categoria_id: categoriaIdFinal || null,
         marca: formData.marca && formData.marca.trim() !== '' ? formData.marca.trim() : null,
         modelo: formData.modelo && formData.modelo.trim() !== '' ? formData.modelo.trim() : null,
         tipo: 'accesorio' as const,
@@ -283,6 +337,8 @@ export default function ProductosStock({ user }: ProductosStockProps) {
       // Limpiar formulario y recargar
       setMostrarFormulario(false);
       setProductoEditando(null);
+      setCategoriaInput('');
+      setShowCategoriaSuggestions(false);
       setFormData({
         codigo_barras: '',
         nombre: '',
@@ -475,19 +531,21 @@ export default function ProductosStock({ user }: ProductosStockProps) {
               <button
                 onClick={() => {
                   setProductoEditando(null);
-                  setFormData({
-                    codigo_barras: '',
-                    nombre: '',
-                    categoria: '',
-                    categoria_id: '',
-                    marca: '',
-                    modelo: '',
-                    precio_venta: '',
-                    costo: '',
-                    stock_actual: '0',
-                    stock_minimo: '0',
-                  });
-                  setMostrarFormulario(true);
+      setFormData({
+        codigo_barras: '',
+        nombre: '',
+        categoria: '',
+        categoria_id: '',
+        marca: '',
+        modelo: '',
+        precio_venta: '',
+        costo: '',
+        stock_actual: '0',
+        stock_minimo: '0',
+      });
+      setCategoriaInput('');
+      setShowCategoriaSuggestions(false);
+      setMostrarFormulario(true);
                 }}
                 className="px-4 py-2 bg-brand text-white rounded-lg font-medium hover:bg-brand-dark shadow-sm"
               >
@@ -593,27 +651,79 @@ export default function ProductosStock({ user }: ProductosStockProps) {
                 required
               />
             </div>
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-slate-700 mb-1">Categoría</label>
-              <select
-                value={formData.categoria_id}
+              <input
+                ref={categoriaInputRef}
+                type="text"
+                value={categoriaInput}
                 onChange={(e) => {
-                  const categoria = categorias.find(c => c.id === e.target.value);
-                  setFormData({
-                    ...formData,
-                    categoria_id: e.target.value,
-                    categoria: categoria?.nombre || '',
-                  });
+                  const value = e.target.value;
+                  setCategoriaInput(value);
+                  
+                  // Filtrar sugerencias
+                  if (value.trim()) {
+                    const filtered = categorias.filter(cat =>
+                      cat.nombre.toLowerCase().includes(value.toLowerCase())
+                    );
+                    setCategoriaSuggestions(filtered);
+                    setShowCategoriaSuggestions(true);
+                  } else {
+                    setCategoriaSuggestions([]);
+                    setShowCategoriaSuggestions(false);
+                  }
+                  
+                  // Si no hay coincidencias, limpiar categoria_id
+                  if (!categorias.find(cat => cat.nombre.toLowerCase() === value.toLowerCase())) {
+                    setFormData({
+                      ...formData,
+                      categoria_id: '',
+                      categoria: value,
+                    });
+                  }
+                }}
+                onFocus={() => {
+                  if (categoriaInput.trim()) {
+                    const filtered = categorias.filter(cat =>
+                      cat.nombre.toLowerCase().includes(categoriaInput.toLowerCase())
+                    );
+                    setCategoriaSuggestions(filtered);
+                    setShowCategoriaSuggestions(true);
+                  }
                 }}
                 className="w-full px-3 py-2 border rounded"
-              >
-                <option value="">Seleccionar categoría...</option>
-                {categorias.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.nombre}
-                  </option>
-                ))}
-              </select>
+                placeholder="Escribe el nombre de la categoría..."
+              />
+              {showCategoriaSuggestions && categoriaSuggestions.length > 0 && (
+                <div
+                  ref={categoriaSuggestionsRef}
+                  className="absolute z-10 w-full mt-1 bg-white border border-slate-300 rounded-md shadow-lg max-h-60 overflow-auto"
+                >
+                  {categoriaSuggestions.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-b-0"
+                      onClick={() => {
+                        setCategoriaInput(cat.nombre);
+                        setFormData({
+                          ...formData,
+                          categoria_id: cat.id,
+                          categoria: cat.nombre,
+                        });
+                        setShowCategoriaSuggestions(false);
+                      }}
+                    >
+                      <div className="font-medium text-slate-900">{cat.nombre}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {categoriaInput && !categorias.find(cat => cat.nombre.toLowerCase() === categoriaInput.toLowerCase()) && (
+                <div className="mt-1 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                  <p className="font-medium mb-1">💡 Categoría nueva</p>
+                  <p>Esta categoría se creará automáticamente al guardar el producto.</p>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Marca</label>

@@ -86,7 +86,7 @@ export default function Sidebar({
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <nav className="p-4 space-y-2">
+        <nav className="p-4 space-y-2 h-full overflow-y-auto">
           {filteredItems.map((item) => (
             <button
               key={item.id}
