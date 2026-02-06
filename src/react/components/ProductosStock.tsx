@@ -69,6 +69,7 @@ export default function ProductosStock({ user }: ProductosStockProps) {
         .from('productos')
         .select('*')
         .eq('tipo', 'accesorio')
+        .eq('activo', true)
         .order('nombre', { ascending: true });
 
       // Filtrar por búsqueda
@@ -442,6 +443,43 @@ export default function ProductosStock({ user }: ProductosStockProps) {
       }
     },
     [user, cargarProductos]
+  );
+
+  const eliminarProducto = useCallback(
+    async (producto: Producto) => {
+      const confirmado = window.confirm(
+        `¿Eliminar el producto "${producto.nombre}"? Esta acción lo ocultará del stock y del POS.`
+      );
+      if (!confirmado) return;
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        const { error: updateError } = await supabase
+          .from('productos')
+          .update({ activo: false })
+          .eq('id', producto.id);
+
+        if (updateError) throw updateError;
+
+        await cargarProductos();
+      } catch (err: any) {
+        console.error('Error eliminando producto:', err);
+
+        let mensajeError = 'Error al eliminar producto: ';
+        if (err.message?.includes('row-level security') || err.message?.includes('RLS')) {
+          mensajeError = 'Error de permisos. Verifica que tienes acceso para eliminar productos.';
+        } else {
+          mensajeError += err.message || 'Error desconocido';
+        }
+
+        setError(mensajeError);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [cargarProductos]
   );
 
   // Manejar escaneo para agregar stock
@@ -921,6 +959,13 @@ export default function ProductosStock({ user }: ProductosStockProps) {
                         disabled={loading}
                       >
                         Editar
+                      </button>
+                      <button
+                        onClick={() => eliminarProducto(producto)}
+                        className="px-2 sm:px-3 py-1 bg-red-500 text-white rounded text-xs sm:text-sm hover:bg-red-600 whitespace-nowrap"
+                        disabled={loading}
+                      >
+                        Eliminar
                       </button>
                     </div>
                   </td>

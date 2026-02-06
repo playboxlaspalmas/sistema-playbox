@@ -19,6 +19,7 @@ export default function VentasList({ user }: VentasListProps) {
   const [ventas, setVentas] = useState<VentaCompleta[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [anulandoVentaId, setAnulandoVentaId] = useState<string | null>(null);
   const [fechaInicio, setFechaInicio] = useState<string>(() => {
     const hoy = new Date();
     return hoy.toISOString().split('T')[0];
@@ -183,6 +184,79 @@ export default function VentasList({ user }: VentasListProps) {
     }
   };
 
+  const anularVenta = async (venta: VentaCompleta) => {
+    const confirmado = window.confirm(
+      `¿Anular la venta ${venta.numero_venta}? Esto devolverá el stock y la venta no aparecerá en los reportes.`
+    );
+    if (!confirmado) return;
+
+    try {
+      setAnulandoVentaId(venta.id);
+      setError(null);
+
+      for (const item of venta.items) {
+        const { data: productoActual, error: productoError } = await supabase
+          .from('productos')
+          .select('id, stock_actual')
+          .eq('id', item.producto_id)
+          .single();
+
+        if (productoError || !productoActual) {
+          throw productoError || new Error('Producto no encontrado');
+        }
+
+        const cantidadAnterior = productoActual.stock_actual || 0;
+        const cantidadNueva = cantidadAnterior + item.cantidad;
+
+        const { error: updateError } = await supabase
+          .from('productos')
+          .update({ stock_actual: cantidadNueva })
+          .eq('id', item.producto_id);
+
+        if (updateError) throw updateError;
+
+        const { error: movimientoError } = await supabase
+          .from('inventario_movimientos')
+          .insert({
+            producto_id: item.producto_id,
+            tipo_movimiento: 'ajuste',
+            cantidad: item.cantidad,
+            cantidad_anterior: cantidadAnterior,
+            cantidad_nueva: cantidadNueva,
+            venta_id: venta.id,
+            usuario_id: user?.id || null,
+            observaciones: `Anulación venta ${venta.numero_venta}`,
+          });
+
+        if (movimientoError) {
+          console.warn('Error registrando movimiento:', movimientoError);
+        }
+      }
+
+      const timestamp = new Date().toISOString();
+      const nuevaObservacion = venta.observaciones
+        ? `${venta.observaciones}\nAnulada por ${user?.name || 'Usuario'} (${timestamp})`
+        : `Anulada por ${user?.name || 'Usuario'} (${timestamp})`;
+
+      const { error: ventaError } = await supabase
+        .from('ventas')
+        .update({
+          estado: 'cancelada',
+          observaciones: nuevaObservacion,
+        })
+        .eq('id', venta.id);
+
+      if (ventaError) throw ventaError;
+
+      await cargarVentas();
+    } catch (err: any) {
+      console.error('Error anulando venta:', err);
+      setError('Error al anular venta: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setAnulandoVentaId(null);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -258,6 +332,14 @@ export default function VentasList({ user }: VentasListProps) {
                         title="Imprimir ticket automáticamente"
                       >
                         🖨️ Imprimir
+                      </button>
+                      <button
+                        onClick={() => anularVenta(venta)}
+                        className="px-3 py-1 bg-red-500 text-white font-medium rounded hover:bg-red-600 transition-colors text-sm"
+                        title="Anular venta"
+                        disabled={anulandoVentaId === venta.id}
+                      >
+                        🗑️ Anular
                       </button>
                     </div>
                   </td>

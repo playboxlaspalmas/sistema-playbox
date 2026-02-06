@@ -28,36 +28,14 @@ export const POST: APIRoute = async ({ request }) => {
     const settings = await getSystemSettings();
     let logoDataUrl = "";
     try {
-      // Si el logo es una data URL (base64), usarla directamente
-      if (settings.header_logo.url.startsWith("data:")) {
-        logoDataUrl = settings.header_logo.url;
-      } else {
-        // Si es una URL normal, construir la URL completa si es relativa
-        let logoUrl = settings.header_logo.url;
-        if (!logoUrl.startsWith("http")) {
-          // Si es relativa, construir URL completa usando el dominio de producción
-          const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://sistema-playbox.vercel.app";
-          logoUrl = `${baseUrl}${logoUrl.startsWith("/") ? "" : "/"}${logoUrl}`;
-        }
-        
-        // Intentar cargar y convertir a base64 para mejor compatibilidad con clientes de email
-        try {
-          const logoResponse = await fetch(logoUrl);
-          if (logoResponse.ok) {
-            const logoBlob = await logoResponse.blob();
-            const logoArrayBuffer = await logoBlob.arrayBuffer();
-            const logoBase64 = Buffer.from(logoArrayBuffer).toString('base64');
-            const logoMimeType = logoBlob.type || 'image/png';
-            logoDataUrl = `data:${logoMimeType};base64,${logoBase64}`;
-            console.log("[EMAIL API] Logo cargado y convertido a base64 exitosamente");
-          } else {
-            console.warn("[EMAIL API] No se pudo cargar el logo, usando URL directamente");
-            logoDataUrl = logoUrl;
-          }
-        } catch (fetchError) {
-          console.warn("[EMAIL API] Error cargando logo, usando URL directamente:", fetchError);
-          logoDataUrl = logoUrl;
-        }
+      // Evitar data URLs para reducir tamaño del HTML y prevenir "clipped" en Gmail
+      let logoUrl = settings.header_logo.url;
+      if (logoUrl && !logoUrl.startsWith("http") && !logoUrl.startsWith("data:")) {
+        const baseUrl = import.meta.env.PUBLIC_SITE_URL || "https://sistema-playbox.vercel.app";
+        logoUrl = `${baseUrl}${logoUrl.startsWith("/") ? "" : "/"}${logoUrl}`;
+      }
+      if (logoUrl && !logoUrl.startsWith("data:")) {
+        logoDataUrl = logoUrl;
       }
     } catch (error) {
       console.error("[EMAIL API] Error cargando configuración del logo:", error);
@@ -156,112 +134,64 @@ export const POST: APIRoute = async ({ request }) => {
         <html>
           <head>
             <meta charset="utf-8">
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-              }
-              .container {
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-              }
-              .header {
-                background-color: #1e3a8a;
-                color: white;
-                padding: 20px;
-                text-align: center;
-                border-radius: 5px 5px 0 0;
-              }
-              .logo-container {
-                margin-bottom: 15px;
-              }
-              .logo-container img {
-                max-width: 150px;
-                height: auto;
-              }
-              .content {
-                background-color: #f9fafb;
-                padding: 30px;
-                border-radius: 0 0 5px 5px;
-              }
-              .order-number {
-                background-color: #3b82f6;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                display: inline-block;
-                margin: 20px 0;
-                font-size: 18px;
-                font-weight: bold;
-              }
-              .highlight-box {
-                background-color: #dbeafe;
-                border-left: 4px solid #3b82f6;
-                padding: 15px;
-                margin: 20px 0;
-                border-radius: 4px;
-              }
-              .footer {
-                margin-top: 30px;
-                padding-top: 20px;
-                border-top: 1px solid #e5e7eb;
-                font-size: 12px;
-                color: #6b7280;
-                text-align: center;
-              }
-            </style>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
           </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                ${logoDataUrl ? `
-                  <div class="logo-container">
-                    <img src="${logoDataUrl}" alt="Playbox Logo" />
-                  </div>
-                ` : ''}
-                <h1>✅ Playbox</h1>
-                <p>¡Su equipo está listo!</p>
-              </div>
-              <div class="content">
-                <h2>Estimado/a ${customerName || "Cliente"},</h2>
-                
-                <div class="highlight-box">
-                  <p style="margin: 0; font-size: 16px; font-weight: bold;">🎉 ¡Excelentes noticias! Su equipo está <strong>listo para retirar</strong>.</strong></p>
-                </div>
-                
-                <div style="text-align: center;">
-                  <div class="order-number">
-                    Orden: ${orderNumber}
-                  </div>
-                </div>
-                
-                <p>Nos complace informarle que la reparación de su equipo ha sido <strong>completada exitosamente</strong> y está disponible para retiro en nuestra sucursal.</p>
-                
-                <p><strong>Próximos pasos:</strong></p>
-                <ul>
-                  <li>Puede retirar su equipo en nuestra sucursal durante nuestro horario de atención</li>
-                  <li>No olvide traer su documento de identidad</li>
-                  <li>Si tiene alguna consulta, no dude en contactarnos</li>
-                </ul>
-                
-                ${branchName ? `
-                  <p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>
-                  ${branchEmail ? `<p><strong>Email:</strong> ${branchEmail}</p>` : ""}
-                  ${branchPhone ? `<p><strong>Teléfono:</strong> ${branchPhone}</p>` : ""}
-                  ${branchAddress ? `<p><strong>Dirección:</strong> ${branchAddress}</p>` : ""}
-                ` : ""}
-                
-                <p>Esperamos verlo pronto para entregarle su equipo.</p>
-                
-                <p>Atentamente,<br><strong>Equipo Playbox</strong></p>
-              </div>
-              <div class="footer">
-                <p>Este es un correo automático, por favor no responda a este mensaje.</p>
-                <p>&copy; ${new Date().getFullYear()} Playbox. Todos los derechos reservados.</p>
-              </div>
-            </div>
+          <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial, sans-serif;color:#111827;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:20px 0;">
+              <tr>
+                <td align="center">
+                  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;">
+                    <tr>
+                      <td style="background:#1e3a8a;color:#ffffff;text-align:center;padding:18px;">
+                        ${logoDataUrl ? `<img src="${logoDataUrl}" alt="Playbox" width="140" style="display:block;margin:0 auto 8px auto;height:auto;max-width:140px;">` : ""}
+                        <div style="font-size:20px;font-weight:bold;">✅ Playbox</div>
+                        <div style="font-size:14px;margin-top:4px;">¡Su equipo está listo!</div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:22px 26px;background:#f9fafb;">
+                        <div style="font-size:16px;margin-bottom:10px;">Estimado/a ${customerName || "Cliente"},</div>
+                        <div style="background:#dbeafe;border-left:4px solid #3b82f6;padding:10px 12px;margin:12px 0;border-radius:4px;font-weight:bold;">
+                          🎉 ¡Excelentes noticias! Su equipo está listo para retirar.
+                        </div>
+                        <div style="text-align:center;margin:16px 0;">
+                          <span style="background:#3b82f6;color:#ffffff;padding:8px 16px;border-radius:5px;display:inline-block;font-weight:bold;">
+                            Orden: ${orderNumber}
+                          </span>
+                        </div>
+                        <div style="font-size:14px;line-height:1.5;">
+                          Nos complace informarle que la reparación de su equipo ha sido completada exitosamente y está disponible para retiro en nuestra sucursal.
+                        </div>
+                        <div style="font-size:14px;margin-top:12px;">
+                          <strong>Próximos pasos:</strong>
+                          <ul style="margin:8px 0 0 18px;padding:0;">
+                            <li>Puede retirar su equipo en nuestra sucursal durante nuestro horario de atención</li>
+                            <li>No olvide traer su documento de identidad</li>
+                            <li>Si tiene alguna consulta, no dude en contactarnos</li>
+                          </ul>
+                        </div>
+                        ${branchName ? `
+                          <div style="margin-top:14px;font-size:14px;">
+                            <div><strong>Sucursal:</strong> ${branchName}</div>
+                            ${branchEmail ? `<div><strong>Email:</strong> ${branchEmail}</div>` : ""}
+                            ${branchPhone ? `<div><strong>Teléfono:</strong> ${branchPhone}</div>` : ""}
+                            ${branchAddress ? `<div><strong>Dirección:</strong> ${branchAddress}</div>` : ""}
+                          </div>
+                        ` : ""}
+                        <div style="margin-top:14px;font-size:14px;">Esperamos verlo pronto para entregarle su equipo.</div>
+                        <div style="margin-top:12px;font-size:14px;">Atentamente,<br><strong>Equipo Playbox</strong></div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:14px 18px;text-align:center;font-size:12px;color:#6b7280;background:#ffffff;border-top:1px solid #e5e7eb;">
+                        Este es un correo automático, por favor no responda a este mensaje.<br>
+                        &copy; ${new Date().getFullYear()} Playbox. Todos los derechos reservados.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
           </body>
         </html>
       `;
@@ -273,107 +203,62 @@ export const POST: APIRoute = async ({ request }) => {
         <html>
           <head>
             <meta charset="utf-8">
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-              }
-              .container {
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-              }
-              .header {
-                background-color: #1e3a8a;
-                color: white;
-                padding: 20px;
-                text-align: center;
-                border-radius: 5px 5px 0 0;
-              }
-              .logo-container {
-                margin-bottom: 15px;
-              }
-              .logo-container img {
-                max-width: 150px;
-                height: auto;
-              }
-              .content {
-                background-color: #f9fafb;
-                padding: 30px;
-                border-radius: 0 0 5px 5px;
-              }
-              .order-number {
-                background-color: #3b82f6;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                display: inline-block;
-                margin: 20px 0;
-                font-size: 18px;
-                font-weight: bold;
-              }
-              .footer {
-                margin-top: 30px;
-                padding-top: 20px;
-                border-top: 1px solid #e5e7eb;
-                font-size: 12px;
-                color: #6b7280;
-                text-align: center;
-              }
-            </style>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
           </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                ${logoDataUrl ? `
-                  <div class="logo-container">
-                    <img src="${logoDataUrl}" alt="Playbox Logo" />
-                  </div>
-                ` : ''}
-                <h1>Playbox</h1>
-                <p>Servicio Especializado en Reparación</p>
-              </div>
-              <div class="content">
-                <h2>Estimado/a ${customerName || "Cliente"},</h2>
-                
-                <p>Nos complace informarle que su equipo ha sido <strong>ingresado con éxito</strong> en nuestro sistema y se encuentra actualmente <strong>en proceso de preparación</strong>.</p>
-                
-                <div style="text-align: center;">
-                  <div class="order-number">
-                    Orden: ${orderNumber}
-                  </div>
-                </div>
-                
-                ${pdfUrl ? `
-                  <p>Puede descargar el PDF con todos los detalles de su orden haciendo clic en el siguiente enlace:</p>
-                  <div style="text-align: center; margin: 20px 0;">
-                    <a href="${pdfUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">📄 Descargar PDF de la Orden</a>
-                  </div>
-                ` : `
-                  <p>En el archivo PDF adjunto encontrará todos los detalles de su orden, incluyendo:</p>
-                `}
-                <ul>
-                  <li>Información del equipo ingresado</li>
-                  <li>Servicios solicitados</li>
-                  <li>Presupuesto detallado</li>
-                  <li>Políticas de garantía</li>
-                  <li>Datos de contacto de nuestra sucursal</li>
-                </ul>
-                
-                <p>Nuestro equipo técnico revisará su equipo y se pondrá en contacto con usted en caso de ser necesario.</p>
-                
-                <p>Si tiene alguna consulta o necesita más información, no dude en contactarnos.</p>
-                
-                <p>Atentamente,<br><strong>Equipo Playbox</strong></p>
-                
-                ${branchName ? `<p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>` : ""}
-              </div>
-              <div class="footer">
-                <p>Este es un correo automático, por favor no responda a este mensaje.</p>
-                <p>&copy; ${new Date().getFullYear()} Playbox. Todos los derechos reservados.</p>
-              </div>
-            </div>
+          <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial, sans-serif;color:#111827;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:20px 0;">
+              <tr>
+                <td align="center">
+                  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;">
+                    <tr>
+                      <td style="background:#1e3a8a;color:#ffffff;text-align:center;padding:18px;">
+                        ${logoDataUrl ? `<img src="${logoDataUrl}" alt="Playbox" width="140" style="display:block;margin:0 auto 8px auto;height:auto;max-width:140px;">` : ""}
+                        <div style="font-size:20px;font-weight:bold;">Playbox</div>
+                        <div style="font-size:14px;margin-top:4px;">Servicio Especializado en Reparación</div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:22px 26px;background:#f9fafb;">
+                        <div style="font-size:16px;margin-bottom:10px;">Estimado/a ${customerName || "Cliente"},</div>
+                        <div style="font-size:14px;line-height:1.5;">
+                          Nos complace informarle que su equipo ha sido ingresado con éxito en nuestro sistema y se encuentra actualmente en proceso de preparación.
+                        </div>
+                        <div style="text-align:center;margin:16px 0;">
+                          <span style="background:#3b82f6;color:#ffffff;padding:8px 16px;border-radius:5px;display:inline-block;font-weight:bold;">
+                            Orden: ${orderNumber}
+                          </span>
+                        </div>
+                        ${pdfUrl ? `
+                          <div style="font-size:14px;margin:10px 0;">Puede descargar el PDF con todos los detalles de su orden:</div>
+                          <div style="text-align:center;margin:12px 0;">
+                            <a href="${pdfUrl}" style="background:#3b82f6;color:#ffffff;padding:10px 18px;text-decoration:none;border-radius:5px;display:inline-block;font-weight:bold;">📄 Descargar PDF de la Orden</a>
+                          </div>
+                        ` : `
+                          <div style="font-size:14px;margin:10px 0;">En el archivo PDF adjunto encontrará todos los detalles de su orden, incluyendo:</div>
+                        `}
+                        <ul style="margin:8px 0 0 18px;padding:0;font-size:14px;">
+                          <li>Información del equipo ingresado</li>
+                          <li>Servicios solicitados</li>
+                          <li>Presupuesto detallado</li>
+                          <li>Políticas de garantía</li>
+                          <li>Datos de contacto de nuestra sucursal</li>
+                        </ul>
+                        <div style="font-size:14px;margin-top:12px;">Nuestro equipo técnico revisará su equipo y se pondrá en contacto con usted en caso de ser necesario.</div>
+                        <div style="font-size:14px;margin-top:10px;">Si tiene alguna consulta o necesita más información, no dude en contactarnos.</div>
+                        <div style="margin-top:12px;font-size:14px;">Atentamente,<br><strong>Equipo Playbox</strong></div>
+                        ${branchName ? `<div style="margin-top:14px;font-size:14px;"><strong>Sucursal:</strong> ${branchName}</div>` : ""}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:14px 18px;text-align:center;font-size:12px;color:#6b7280;background:#ffffff;border-top:1px solid #e5e7eb;">
+                        Este es un correo automático, por favor no responda a este mensaje.<br>
+                        &copy; ${new Date().getFullYear()} Playbox. Todos los derechos reservados.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
           </body>
         </html>
       `;

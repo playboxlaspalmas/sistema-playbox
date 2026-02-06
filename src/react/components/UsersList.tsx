@@ -67,9 +67,37 @@ export default function UsersList() {
         if (updateError) throw updateError;
         alert("Usuario actualizado exitosamente. Nota: Para cambiar la contraseña, hazlo desde Supabase Dashboard → Authentication → Users.");
       } else {
-        // Para crear usuarios nuevos, se debe hacer desde Supabase Dashboard
-        alert("Para crear usuarios nuevos:\n\n1. Ve a Supabase Dashboard → Authentication → Users → Add user\n2. Crea el usuario con email y contraseña\n3. Copia el User UID\n4. Ejecuta en SQL Editor:\n\nINSERT INTO users (id, email, name, role, sucursal_id)\nVALUES ('UID_AQUI', 'email@ejemplo.com', 'Nombre', 'role', 'sucursal_id');\n\nLuego recarga esta página.");
-        return;
+        if (!userData.password || userData.password.length < 6) {
+          alert("La contraseña es obligatoria y debe tener al menos 6 caracteres.");
+          return;
+        }
+
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !sessionData.session?.access_token) {
+          throw new Error("Sesión inválida. Vuelve a iniciar sesión.");
+        }
+
+        const response = await fetch("/api/create-user", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: JSON.stringify({
+            email: userData.email,
+            password: userData.password,
+            name: userData.name,
+            role: userData.role,
+            sucursal_id: userData.sucursal_id || null,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || "Error al crear usuario");
+        }
+
+        alert("Usuario creado exitosamente.");
       }
 
       await loadData();
@@ -237,10 +265,16 @@ function UserForm({ user, branches, onSave, onCancel }: UserFormProps) {
           </div>
           {!user && (
             <div className="md:col-span-2">
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
-                <strong>Nota:</strong> Para crear usuarios nuevos, primero créalos en Supabase Dashboard → Authentication → Users. 
-                Luego agrega el registro en la tabla users usando el SQL Editor con el User UID.
-              </div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña *</label>
+              <input
+                type="password"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required
+                minLength={6}
+                placeholder="Mínimo 6 caracteres"
+              />
             </div>
           )}
           <div>
