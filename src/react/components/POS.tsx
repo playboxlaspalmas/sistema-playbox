@@ -246,36 +246,57 @@ export default function POS({ user }: POSProps) {
       let error: any = null;
       const maxRetries = 5;
 
-      for (let intento = 0; intento < maxRetries; intento++) {
-        const numeroVenta = await generarNumeroVenta();
-        const response = await supabase
-          .from('ventas')
-          .insert({
-            numero_venta: numeroVenta,
+      const usarApi = user.role === 'branch' || user.role === 'encargado';
+      if (usarApi) {
+        const response = await fetch('/api/create-sale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             usuario_id: user.id,
-            sucursal_id: user.sucursal_id,
-            total: 0,
-            metodo_pago: 'EFECTIVO',
-            estado: 'pendiente',
-          })
-          .select()
-          .single();
+            sucursal_id: user.sucursal_id || null,
+          }),
+        });
 
-        data = response.data;
-        error = response.error;
-
-        if (!error) break;
-
-        if (
-          error.code === '23505' ||
-          error.message?.includes('duplicate key') ||
-          error.message?.includes('venta_numero_venta_key')
-        ) {
-          console.warn('[POS] Numero de venta duplicado, reintentando...', numeroVenta);
-          continue;
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Error al crear venta');
         }
 
-        break;
+        const result = await response.json();
+        data = result.venta;
+        error = null;
+      } else {
+        for (let intento = 0; intento < maxRetries; intento++) {
+          const numeroVenta = await generarNumeroVenta();
+          const response = await supabase
+            .from('ventas')
+            .insert({
+              numero_venta: numeroVenta,
+              usuario_id: user.id,
+              sucursal_id: user.sucursal_id,
+              total: 0,
+              metodo_pago: 'EFECTIVO',
+              estado: 'pendiente',
+            })
+            .select()
+            .single();
+
+          data = response.data;
+          error = response.error;
+
+          if (!error) break;
+
+          if (
+            error.code === '23505' ||
+            error.message?.includes('duplicate key') ||
+            error.message?.includes('venta_numero_venta_key')
+          ) {
+            console.warn('[POS] Numero de venta duplicado, reintentando...', numeroVenta);
+            continue;
+          }
+
+          break;
+        }
       }
 
       if (error) throw error;
