@@ -217,38 +217,67 @@ export default function POS({ user }: POSProps) {
     try {
       setLoading(true);
 
-      // Generar número de venta manualmente (formato: V-YYYY-0001)
       const año = new Date().getFullYear();
-      const { data: ultimaVenta } = await supabase
-        .from('ventas')
-        .select('numero_venta')
-        .like('numero_venta', `V-${año}-%`)
-        .order('numero_venta', { ascending: false })
-        .limit(1)
-        .single();
+      const generarNumeroVenta = async (): Promise<string> => {
+        try {
+          const { data: ultimaVenta, error } = await supabase
+            .from('ventas')
+            .select('numero_venta')
+            .like('numero_venta', `V-${año}-%`)
+            .order('numero_venta', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-      let siguienteNumero = 1;
-      if (ultimaVenta) {
-        const match = ultimaVenta.numero_venta.match(/V-\d{4}-(\d+)/);
-        if (match) {
-          siguienteNumero = parseInt(match[1]) + 1;
+          if (!error && ultimaVenta?.numero_venta) {
+            const match = ultimaVenta.numero_venta.match(/V-\d{4}-(\d+)/);
+            if (match) {
+              const siguienteNumero = parseInt(match[1], 10) + 1;
+              return `V-${año}-${String(siguienteNumero).padStart(4, '0')}`;
+            }
+          }
+        } catch (err) {
+          console.warn('[POS] No se pudo obtener última venta, usando fallback:', err);
         }
+
+        // Fallback si no hay permiso de lectura o hay error
+        return `V-${año}-${Date.now()}`;
+      };
+
+      let data: any = null;
+      let error: any = null;
+      const maxRetries = 5;
+
+      for (let intento = 0; intento < maxRetries; intento++) {
+        const numeroVenta = await generarNumeroVenta();
+        const response = await supabase
+          .from('ventas')
+          .insert({
+            numero_venta: numeroVenta,
+            usuario_id: user.id,
+            sucursal_id: user.sucursal_id,
+            total: 0,
+            metodo_pago: 'EFECTIVO',
+            estado: 'pendiente',
+          })
+          .select()
+          .single();
+
+        data = response.data;
+        error = response.error;
+
+        if (!error) break;
+
+        if (
+          error.code === '23505' ||
+          error.message?.includes('duplicate key') ||
+          error.message?.includes('venta_numero_venta_key')
+        ) {
+          console.warn('[POS] Numero de venta duplicado, reintentando...', numeroVenta);
+          continue;
+        }
+
+        break;
       }
-
-      const numeroVenta = `V-${año}-${String(siguienteNumero).padStart(4, '0')}`;
-
-      const { data, error } = await supabase
-        .from('ventas')
-        .insert({
-          numero_venta: numeroVenta,
-          usuario_id: user.id,
-          sucursal_id: user.sucursal_id,
-          total: 0,
-          metodo_pago: 'EFECTIVO',
-          estado: 'pendiente',
-        })
-        .select()
-        .single();
 
       if (error) throw error;
 

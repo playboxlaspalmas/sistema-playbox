@@ -351,7 +351,7 @@ export default function Dashboard() {
 
     switch (section) {
       case "dashboard":
-        if (user.role === "admin") {
+        if (user.role === "admin" || user.role === "encargado") {
           return <AdminDashboard user={user} onNewOrder={() => setSection("new-order")} />;
         } else if (user.role === "branch") {
           // Dashboard para sucursales
@@ -364,7 +364,14 @@ export default function Dashboard() {
       case "orders":
         // Solo admin tiene isAdmin=true, los demás usuarios (incluido encargado/tienda) no son admin
         // Admin puede ver todas las órdenes, usuarios de sucursal solo ven las de su sucursal
-        return <OrdersTable technicianId={user.role === "admin" ? undefined : user.id} isAdmin={user.role === "admin"} user={user} onNewOrder={() => setSection("new-order")} />;
+        return (
+          <OrdersTable
+            technicianId={user.role === "admin" || user.role === "encargado" ? undefined : user.id}
+            isAdmin={user.role === "admin" || user.role === "encargado"}
+            user={user}
+            onNewOrder={() => setSection("new-order")}
+          />
+        );
       case "customers":
         return <CustomersList user={user} />;
       case "branches":

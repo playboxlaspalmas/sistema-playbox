@@ -3,11 +3,15 @@ import type { User, UserPermissions } from "@/types";
 /**
  * Verifica si un usuario tiene un permiso específico
  */
+function isAdminLike(user: User | null): boolean {
+  return !!user && (user.role === "admin" || user.role === "encargado");
+}
+
 export function hasPermission(user: User | null, permission: keyof UserPermissions): boolean {
   if (!user) return false;
   
-  // Los admins tienen todos los permisos
-  if (user.role === "admin") return true;
+  // Admins y encargados tienen todos los permisos
+  if (isAdminLike(user)) return true;
   
   // Verificar permiso específico
   return user.permissions?.[permission] === true;
@@ -19,8 +23,8 @@ export function hasPermission(user: User | null, permission: keyof UserPermissio
 export function canAccessSection(user: User | null, section: string): boolean {
   if (!user) return false;
   
-  // Los admins tienen acceso a todo
-  if (user.role === "admin") return true;
+  // Admins y encargados tienen acceso a todo
+  if (isAdminLike(user)) return true;
   
   // Permisos por sección
   switch (section) {
@@ -113,7 +117,7 @@ export function getDefaultPermissions(): UserPermissions {
  */
 export function canViewFullMetrics(user: User | null): boolean {
   if (!user) return false;
-  if (user.role === "admin") return true;
+  if (isAdminLike(user)) return true;
   return hasPermission(user, "use_statistics_panel") === true || 
          hasPermission(user, "use_admin_panel") === true;
 }

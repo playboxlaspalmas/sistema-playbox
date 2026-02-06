@@ -395,32 +395,51 @@ export default function ProductosStock({ user }: ProductosStockProps) {
         setLoading(true);
         setError(null);
 
-        const nuevaCantidad = producto.stock_actual + cantidad;
-
-        // Actualizar stock
-        const { error: updateError } = await supabase
-          .from('productos')
-          .update({ stock_actual: nuevaCantidad })
-          .eq('id', producto.id);
-
-        if (updateError) throw updateError;
-
-        // Registrar movimiento
-        const { error: movimientoError } = await supabase
-          .from('inventario_movimientos')
-          .insert({
-            producto_id: producto.id,
-            tipo_movimiento: cantidad > 0 ? 'compra' : 'ajuste',
-            cantidad,
-            cantidad_anterior: producto.stock_actual,
-            cantidad_nueva: nuevaCantidad,
-            usuario_id: user.id,
-            observaciones: cantidad > 0 ? 'Carga de stock' : 'Ajuste de stock',
+        if (user.role === 'branch') {
+          const response = await fetch('/api/update-stock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              producto_id: producto.id,
+              cantidad,
+              usuario_id: user.id,
+              sucursal_id: user.sucursal_id || user.id,
+              observaciones: cantidad > 0 ? 'Carga de stock' : 'Ajuste de stock',
+            }),
           });
 
-        if (movimientoError) {
-          console.error('Error registrando movimiento:', movimientoError);
-          // No lanzar error aquí, el stock ya se actualizó
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Error actualizando stock');
+          }
+        } else {
+          const nuevaCantidad = producto.stock_actual + cantidad;
+
+          // Actualizar stock
+          const { error: updateError } = await supabase
+            .from('productos')
+            .update({ stock_actual: nuevaCantidad })
+            .eq('id', producto.id);
+
+          if (updateError) throw updateError;
+
+          // Registrar movimiento
+          const { error: movimientoError } = await supabase
+            .from('inventario_movimientos')
+            .insert({
+              producto_id: producto.id,
+              tipo_movimiento: cantidad > 0 ? 'compra' : 'ajuste',
+              cantidad,
+              cantidad_anterior: producto.stock_actual,
+              cantidad_nueva: nuevaCantidad,
+              usuario_id: user.id,
+              observaciones: cantidad > 0 ? 'Carga de stock' : 'Ajuste de stock',
+            });
+
+          if (movimientoError) {
+            console.error('Error registrando movimiento:', movimientoError);
+            // No lanzar error aquí, el stock ya se actualizó
+          }
         }
 
         cargarProductos();
