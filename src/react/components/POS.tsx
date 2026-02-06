@@ -70,7 +70,9 @@ export default function POS({ user }: POSProps) {
   // Calcular vueltos cuando cambia el efectivo recibido
   useEffect(() => {
     if (metodoPago === 'EFECTIVO' && efectivoRecibido) {
-      const recibido = parseFloat(efectivoRecibido) || 0;
+      // Limpiar el valor para calcular vueltos (remover puntos que pueden ser separadores de miles)
+      const efectivoLimpio = efectivoRecibido.toString().replace(/[^\d]/g, '');
+      const recibido = efectivoLimpio ? parseFloat(efectivoLimpio) : 0;
       const vueltosCalculados = recibido >= total ? recibido - total : 0;
       setVueltos(vueltosCalculados);
     } else {
@@ -282,7 +284,7 @@ export default function POS({ user }: POSProps) {
   }, []);
 
   // Finalizar venta
-  const finalizarVenta = useCallback(async () => {
+  const finalizarVenta = useCallback(async (efectivoRecibidoOverride?: string) => {
     if (!ventaActual || carrito.length === 0) {
       setError('No hay productos en el carrito');
       return;
@@ -291,91 +293,50 @@ export default function POS({ user }: POSProps) {
     try {
       setLoading(true);
       setError(null);
+      
+      // Usar el valor override si se proporciona (para evitar problemas de timing con el estado)
+      const efectivoRecibidoParaValidar = efectivoRecibidoOverride !== undefined ? efectivoRecibidoOverride : efectivoRecibido;
 
-      // Verificar stock antes de finalizar
+      // Verificar stock antes de finalizar (usar FOR UPDATE para evitar condiciones de carrera)
+      // Usar una consulta que bloquee las filas para evitar ventas simultáneas del mismo producto
+      const productosIds = carrito.map(item => item.producto.id);
+      
+      const { data: productosActuales, error: productosError } = await supabase
+        .from('productos')
+        .select('id, stock_actual, nombre, codigo_barras')
+        .in('id', productosIds);
+
+      if (productosError) {
+        throw new Error(`Error al verificar stock: ${productosError.message}`);
+      }
+
+      if (!productosActuales || productosActuales.length === 0) {
+        throw new Error('No se pudieron obtener los productos para verificar stock');
+      }
+
+      // Crear un mapa de productos por ID para acceso rápido
+      const productosMap = new Map(productosActuales.map(p => [p.id, p]));
+
+      // Verificar stock de cada item del carrito
       for (const item of carrito) {
-        const { data: productoActual, error: productoError } = await supabase
-          .from('productos')
-          .select('stock_actual, nombre')
-          .eq('id', item.producto.id)
-          .single();
-
-        if (productoError) {
-          throw new Error(`Error al verificar stock: ${productoError.message}`);
-        }
+        const productoActual = productosMap.get(item.producto.id);
 
         if (!productoActual) {
-          throw new Error(`Producto ${item.producto.nombre} no encontrado`);
+          throw new Error(`Producto ${item.producto.nombre} (ID: ${item.producto.id}) no encontrado en la base de datos`);
         }
+
+        console.log('[POS] Verificando stock:', {
+          producto: productoActual.nombre,
+          stockActual: productoActual.stock_actual,
+          cantidadRequerida: item.cantidad,
+          suficiente: productoActual.stock_actual >= item.cantidad
+        });
 
         if (productoActual.stock_actual < item.cantidad) {
           throw new Error(
             `Stock insuficiente para ${productoActual.nombre}: se requiere ${item.cantidad}, hay ${productoActual.stock_actual}`
           );
         }
-      }
-
-      // Crear items de venta
-      const items = carrito.map((item) => ({
-        venta_id: ventaActual.id,
-        producto_id: item.producto.id,
-        cantidad: item.cantidad,
-        precio_unitario: item.precio_unitario,
-        subtotal: item.subtotal,
-      }));
-
-      const { error: itemsError } = await supabase.from('venta_items').insert(items);
-
-      if (itemsError) {
-        // Manejar errores específicos
-        if (itemsError.code === '23503') {
-          throw new Error('Uno de los productos ya no existe');
-        } else if (itemsError.code === '23514') {
-          throw new Error('Error de validación: ' + itemsError.message);
-        } else {
-          throw itemsError;
-        }
-      }
-
-      // Descontar stock manualmente para asegurar que se descuente
-      for (const item of carrito) {
-        const { data: productoActual, error: productoError } = await supabase
-          .from('productos')
-          .select('stock_actual')
-          .eq('id', item.producto.id)
-          .single();
-
-        if (productoError || !productoActual) {
-          console.error(`Error obteniendo stock para producto ${item.producto.id}:`, productoError);
-          continue;
-        }
-
-        const nuevoStock = productoActual.stock_actual - item.cantidad;
-        
-        // Actualizar stock directamente
-        const { error: updateStockError } = await supabase
-          .from('productos')
-          .update({ stock_actual: nuevoStock })
-          .eq('id', item.producto.id);
-
-        if (updateStockError) {
-          console.error(`Error actualizando stock para producto ${item.producto.id}:`, updateStockError);
-          // Continuar aunque falle, el trigger debería manejarlo
-        } else {
-          console.log(`Stock actualizado: ${item.producto.nombre} - ${productoActual.stock_actual} → ${nuevoStock}`);
-        }
-
-        // Registrar movimiento de inventario manualmente
-        await supabase.from('inventario_movimientos').insert({
-          producto_id: item.producto.id,
-          tipo_movimiento: 'venta',
-          cantidad: -item.cantidad,
-          cantidad_anterior: productoActual.stock_actual,
-          cantidad_nueva: nuevoStock,
-          venta_id: ventaActual.id,
-          usuario_id: user.id,
-          observaciones: 'Venta POS'
-        });
       }
 
       // Registrar cliente si se solicitó
@@ -406,15 +367,69 @@ export default function POS({ user }: POSProps) {
       let vueltosFinal: number | null = null;
       
       if (metodoPago === 'EFECTIVO') {
-        const recibido = parseFloat(efectivoRecibido) || 0;
+        console.log('[POS] Iniciando validación de efectivo recibido:', {
+          efectivoRecibidoParaValidar,
+          tipo: typeof efectivoRecibidoParaValidar,
+          longitud: efectivoRecibidoParaValidar?.length,
+          metodoPago,
+          total
+        });
+        
+        // Verificar que el valor existe y no está vacío
+        if (!efectivoRecibidoParaValidar || efectivoRecibidoParaValidar.toString().trim() === '') {
+          console.error('[POS] ERROR: efectivoRecibido está vacío');
+          throw new Error(`Debe ingresar el efectivo recibido. Valor ingresado: "${efectivoRecibidoParaValidar}"`);
+        }
+        
+        // Limpiar el valor: remover todos los puntos (pueden ser separadores de miles o decimales)
+        // y convertir a número
+        const efectivoLimpio = efectivoRecibidoParaValidar
+          .toString()
+          .trim()
+          .replace(/[^\d]/g, ''); // Remover todo excepto dígitos
+        
+        console.log('[POS] Efectivo después de limpiar:', {
+          original: efectivoRecibidoParaValidar,
+          limpio: efectivoLimpio
+        });
+        
+        if (!efectivoLimpio || efectivoLimpio === '') {
+          console.error('[POS] ERROR: efectivoLimpio está vacío después de limpiar');
+          throw new Error(`El efectivo recibido debe contener números. Valor ingresado: "${efectivoRecibidoParaValidar}"`);
+        }
+        
+        const recibido = parseFloat(efectivoLimpio);
+        
+        console.log('[POS] Validando efectivo recibido:', {
+          efectivoRecibidoOriginal: efectivoRecibidoParaValidar,
+          efectivoLimpio,
+          recibido,
+          esNaN: isNaN(recibido),
+          total,
+          metodoPago,
+          esValido: recibido > 0
+        });
+        
+        if (isNaN(recibido) || recibido <= 0) {
+          console.error('[POS] ERROR: recibido no es válido:', recibido);
+          throw new Error(`El efectivo recibido debe ser un número mayor a 0. Valor ingresado: "${efectivoRecibidoParaValidar}"`);
+        }
+        
         if (recibido < total) {
           throw new Error(`El efectivo recibido (${formatCurrency(recibido)}) es menor al total (${formatCurrency(total)})`);
         }
+        
         efectivoRecibidoFinal = recibido;
         vueltosFinal = recibido - total;
+        
+        console.log('[POS] Efectivo validado correctamente:', {
+          efectivoRecibidoFinal,
+          vueltosFinal
+        });
       }
 
-      // Actualizar venta con total, estado, cliente y datos de efectivo
+      // IMPORTANTE: Actualizar venta a 'completada' ANTES de insertar items
+      // para que el trigger pueda verificar stock y descontar correctamente
       const { error: ventaError } = await supabase
         .from('ventas')
         .update({
@@ -427,6 +442,43 @@ export default function POS({ user }: POSProps) {
           caja_diaria_id: cajaAbierta?.id || null,
         })
         .eq('id', ventaActual.id);
+
+      if (ventaError) {
+        throw ventaError;
+      }
+
+      // Crear items de venta DESPUÉS de actualizar la venta a 'completada'
+      // El trigger 'actualizar_stock_por_venta' se ejecutará al insertar cada item
+      // y verificará que haya stock suficiente antes de descontar
+      const items = carrito.map((item) => ({
+        venta_id: ventaActual.id,
+        producto_id: item.producto.id,
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+        subtotal: item.subtotal,
+      }));
+
+      const { error: itemsError } = await supabase.from('venta_items').insert(items);
+
+      if (itemsError) {
+        // Si falla al insertar items, revertir la venta a 'pendiente'
+        await supabase
+          .from('ventas')
+          .update({ estado: 'pendiente' })
+          .eq('id', ventaActual.id);
+        
+        // Manejar errores específicos
+        if (itemsError.code === '23503') {
+          throw new Error('Uno de los productos ya no existe');
+        } else if (itemsError.code === '23514') {
+          throw new Error('Error de validación: ' + itemsError.message);
+        } else if (itemsError.message.includes('Stock insuficiente')) {
+          // El trigger detectó stock insuficiente
+          throw new Error(itemsError.message);
+        } else {
+          throw itemsError;
+        }
+      }
 
       if (ventaError) {
         // Si falla la actualización, intentar eliminar los items creados
@@ -907,12 +959,51 @@ export default function POS({ user }: POSProps) {
                   Efectivo Recibido
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={efectivoRecibido}
-                  onChange={(e) => setEfectivoRecibido(e.target.value)}
-                  placeholder="0"
-                  min={total}
-                  step="100"
+                  onChange={(e) => {
+                    // Permitir solo números y punto como separador decimal o de miles
+                    let value = e.target.value;
+                    console.log('[POS Input] onChange - valor original:', value);
+                    
+                    // Remover todo excepto dígitos y puntos
+                    value = value.replace(/[^\d.]/g, '');
+                    
+                    // Si hay múltiples puntos, mantener solo el último (como decimal)
+                    const parts = value.split('.');
+                    if (parts.length > 2) {
+                      value = parts.slice(0, -1).join('') + '.' + parts[parts.length - 1];
+                    }
+                    
+                    console.log('[POS Input] onChange - valor procesado:', value);
+                    setEfectivoRecibido(value);
+                  }}
+                  onBlur={(e) => {
+                    // Al perder el foco, normalizar el valor (remover puntos de miles)
+                    const originalValue = e.target.value;
+                    console.log('[POS Input] onBlur - valor original:', originalValue);
+                    
+                    if (!originalValue || originalValue.trim() === '') {
+                      console.log('[POS Input] onBlur - valor vacío, no hacer nada');
+                      return; // No hacer nada si está vacío
+                    }
+                    
+                    // Remover todos los puntos y convertir a número limpio
+                    const value = originalValue.replace(/\./g, '');
+                    const numericValue = parseFloat(value);
+                    
+                    console.log('[POS Input] onBlur - valor limpio:', value, 'numérico:', numericValue);
+                    
+                    if (value && !isNaN(numericValue) && numericValue > 0) {
+                      setEfectivoRecibido(value);
+                      console.log('[POS Input] onBlur - valor actualizado a:', value);
+                    } else {
+                      console.log('[POS Input] onBlur - valor inválido, mantener original');
+                      // Mantener el valor original si no es válido
+                    }
+                  }}
+                  placeholder="Ej: 20000 o 20.000"
                   className="w-full px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-900 text-lg font-semibold focus:ring-2 focus:ring-brand focus:border-brand"
                 />
                 {efectivoRecibido && parseFloat(efectivoRecibido) > 0 && (
@@ -951,9 +1042,47 @@ export default function POS({ user }: POSProps) {
             )}
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                onClick={finalizarVenta}
+                onClick={(e) => {
+                  e.preventDefault();
+                  
+                  // Obtener el valor directamente del input para evitar problemas de timing con el estado
+                  const inputElement = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
+                  let efectivoParaValidar = efectivoRecibido;
+                  
+                  if (metodoPago === 'EFECTIVO') {
+                    // Intentar obtener el valor del input DOM primero
+                    if (inputElement && inputElement.value && inputElement.value.trim() !== '') {
+                      efectivoParaValidar = inputElement.value;
+                      console.log('[POS Button] Usando valor del input DOM:', efectivoParaValidar);
+                    } else {
+                      console.log('[POS Button] Usando valor del estado:', efectivoRecibido);
+                    }
+                    
+                    // Normalizar el valor (remover puntos)
+                    if (efectivoParaValidar) {
+                      const efectivoLimpio = efectivoParaValidar.toString().replace(/[^\d]/g, '');
+                      if (efectivoLimpio) {
+                        efectivoParaValidar = efectivoLimpio;
+                        // Actualizar el estado también para consistencia
+                        setEfectivoRecibido(efectivoLimpio);
+                        console.log('[POS Button] Valor normalizado:', efectivoParaValidar);
+                      }
+                    }
+                    
+                    console.log('[POS Button] Click en Confirmar Pago:', {
+                      efectivoRecibidoEstado: efectivoRecibido,
+                      efectivoParaValidar,
+                      valorInput: inputElement?.value,
+                      metodoPago,
+                      total
+                    });
+                  }
+                  
+                  // Llamar a finalizarVenta con el valor normalizado
+                  finalizarVenta(efectivoParaValidar);
+                }}
                 className="flex-1 py-3 bg-brand text-white rounded-lg font-semibold hover:bg-brand-dark disabled:opacity-50 transition-colors shadow-sm text-base sm:text-lg"
-                disabled={loading || (metodoPago === 'EFECTIVO' && (!efectivoRecibido || parseFloat(efectivoRecibido) < total))}
+                disabled={loading || (metodoPago === 'EFECTIVO' && (!efectivoRecibido || parseFloat(efectivoRecibido.toString().replace(/[^\d]/g, '')) < total))}
               >
                 Confirmar Pago
               </button>

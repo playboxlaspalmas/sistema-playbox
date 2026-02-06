@@ -605,6 +605,7 @@ export default function Settings() {
 
                 <SignatureCanvas
                   label="Firma de Quien Recibe"
+                  allowUpload={true}
                   onSave={(dataUrl) => {
                     setSettings({
                       ...settings,

@@ -6,6 +6,7 @@ interface SignatureCanvasProps {
   label: string;
   width?: number;
   height?: number;
+  allowUpload?: boolean; // Permitir subir imagen además de dibujar
 }
 
 export default function SignatureCanvas({ 
@@ -13,9 +14,11 @@ export default function SignatureCanvas({
   initialImage, 
   label,
   width = 200,
-  height = 80 
+  height = 80,
+  allowUpload = false
 }: SignatureCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
 
@@ -100,6 +103,40 @@ export default function SignatureCanvas({
     ctx.clearRect(0, 0, width, height);
     setHasSignature(false);
     onSave('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar que sea una imagen
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        setHasSignature(true);
+        onSave(dataUrl);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -121,7 +158,25 @@ export default function SignatureCanvas({
           style={{ touchAction: 'none' }}
         />
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
+        {allowUpload && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileUpload}
+              className="hidden"
+              id={`signature-upload-${label.replace(/\s+/g, '-')}`}
+            />
+            <label
+              htmlFor={`signature-upload-${label.replace(/\s+/g, '-')}`}
+              className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 cursor-pointer"
+            >
+              📁 Subir Imagen
+            </label>
+          </>
+        )}
         <button
           type="button"
           onClick={clearSignature}

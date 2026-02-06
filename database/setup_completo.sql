@@ -209,7 +209,9 @@ CREATE TABLE work_orders (
   -- Campos de firmas
   cliente_signature_url TEXT,
   recibido_por_signature_url TEXT,
-  recibido_por_nombre TEXT
+  recibido_por_nombre TEXT,
+  -- Campo para indicar si el cliente no dejó abonado nada
+  cliente_sin_abono BOOLEAN DEFAULT FALSE
 );
 
 -- ============================================
@@ -532,12 +534,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Función para registrar movimiento de inventario
+-- IMPORTANTE: Si el movimiento ya tiene cantidad_anterior y cantidad_nueva establecidos,
+-- NO descuenta stock porque ya fue actualizado por otra función (ej: actualizar_stock_por_venta)
 CREATE OR REPLACE FUNCTION registrar_movimiento_inventario()
 RETURNS TRIGGER AS $$
 DECLARE
   stock_anterior INTEGER;
   stock_nuevo INTEGER;
 BEGIN
+  -- Si ya tiene cantidad_anterior y cantidad_nueva, el stock ya fue actualizado
+  -- Solo establecer los valores en el registro sin modificar el stock
+  IF NEW.cantidad_anterior IS NOT NULL AND NEW.cantidad_nueva IS NOT NULL THEN
+    -- El stock ya fue actualizado por otra función, solo retornar
+    RETURN NEW;
+  END IF;
+  
+  -- Si no tiene cantidad_anterior y cantidad_nueva, calcular y actualizar stock
   SELECT stock_actual INTO stock_anterior
   FROM productos
   WHERE id = NEW.producto_id;
@@ -561,6 +573,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Función para actualizar stock por venta (con validación de stock)
+-- IMPORTANTE: Esta función NO inserta en inventario_movimientos para evitar doble descuento
+-- El trigger registrar_movimiento_inventario se encargará de registrar el movimiento cuando se inserte manualmente
 CREATE OR REPLACE FUNCTION actualizar_stock_por_venta()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -586,11 +600,14 @@ BEGIN
     
     stock_nuevo := stock_anterior - NEW.cantidad;
     
+    -- Actualizar stock del producto
     UPDATE productos
     SET stock_actual = stock_nuevo,
         updated_at = NOW()
     WHERE id = NEW.producto_id;
     
+    -- Registrar movimiento de inventario (el trigger registrar_movimiento_inventario NO descuenta stock
+    -- porque ya viene con cantidad_anterior y cantidad_nueva establecidos)
     INSERT INTO inventario_movimientos (
       producto_id,
       tipo_movimiento,

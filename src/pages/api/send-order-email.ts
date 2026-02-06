@@ -4,11 +4,6 @@ import { getSystemSettings } from "../../lib/settings";
 
 const resendApiKey = import.meta.env.RESEND_API_KEY;
 
-// Configurar límite de tamaño del body para Vercel
-export const config = {
-  maxDuration: 30, // 30 segundos máximo
-};
-
 export const POST: APIRoute = async ({ request }) => {
   // Logging inmediato para verificar que la función se ejecuta
   console.log("[EMAIL API] ========================================");
@@ -29,7 +24,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const resend = new Resend(resendApiKey);
 
-    // Cargar configuración del sistema para obtener el logo - EXACTAMENTE como en el proyecto de referencia
+    // Cargar configuración del sistema para obtener el logo
     const settings = await getSystemSettings();
     let logoDataUrl = "";
     try {
@@ -69,23 +64,7 @@ export const POST: APIRoute = async ({ request }) => {
       // Continuar sin logo si hay error
     }
 
-    // Leer el body directamente como JSON
-    // Si el request es muy grande, Vercel lo rechazará antes de llegar aquí (error 413)
-    // IMPORTANTE: Si el error 413 ocurre aquí, significa que el body es demasiado grande
-    let body;
-    try {
-      body = await request.json();
-    } catch (error: any) {
-      console.error("[EMAIL API] ERROR al parsear JSON del body:", error);
-      // Si el error es por tamaño, Vercel ya habrá rechazado el request antes
-      return new Response(
-        JSON.stringify({ 
-          error: "Error al procesar el request body. Puede ser demasiado grande.",
-          details: error.message
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const body = await request.json();
     const { 
       to, 
       customerName, 
@@ -93,9 +72,9 @@ export const POST: APIRoute = async ({ request }) => {
       pdfBase64, 
       pdfUrl, // URL del PDF si se subió a storage
       branchName,
-      branchEmail, // Ya no se usa, pero se mantiene para compatibilidad
-      branchPhone, // Teléfono de la sucursal
-      branchAddress, // Dirección de la sucursal
+      branchEmail,
+      branchPhone,
+      branchAddress,
       emailType = 'order_created' // 'order_created' o 'ready_for_pickup'
     } = body;
     
@@ -104,23 +83,9 @@ export const POST: APIRoute = async ({ request }) => {
       orderNumber,
       emailType,
       hasPdfBase64: !!pdfBase64,
-      pdfBase64Size: pdfBase64 ? pdfBase64.length : 0,
       hasPdfUrl: !!pdfUrl,
       branchName: branchName || 'no especificado'
     });
-    
-    // Si se está enviando pdfBase64 y es muy grande, rechazar
-    if (pdfBase64 && pdfBase64.length > 3 * 1024 * 1024) {
-      console.error("[EMAIL API] ERROR: pdfBase64 demasiado grande:", pdfBase64.length, "bytes");
-      return new Response(
-        JSON.stringify({ 
-          error: "pdfBase64 demasiado grande. Por favor, sube el PDF a storage y envía solo pdfUrl.",
-          hint: "El PDF debe subirse a Supabase Storage antes de enviar el email.",
-          size: pdfBase64.length
-        }),
-        { status: 413, headers: { "Content-Type": "application/json" } }
-      );
-    }
 
     if (!to || !orderNumber) {
       return new Response(
@@ -129,49 +94,24 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    // PDF (URL preferida, base64 como fallback) es requerido para order_created
-    // Preferir pdfUrl sobre pdfBase64 para evitar error 413
-    if (emailType === 'order_created' && !pdfUrl && !pdfBase64) {
+    // PDF (base64 o URL) es requerido para order_created
+    if (emailType === 'order_created' && !pdfBase64 && !pdfUrl) {
       return new Response(
-        JSON.stringify({ error: "pdfUrl o pdfBase64 es requerido para order_created" }),
+        JSON.stringify({ error: "pdfBase64 o pdfUrl es requerido para order_created" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
-    
-    // Si tenemos pdfBase64 pero no pdfUrl, advertir que puede causar error 413
-    if (emailType === 'order_created' && pdfBase64 && !pdfUrl) {
-      const base64Size = pdfBase64.length;
-      const maxSafeSize = 3 * 1024 * 1024; // 3MB
-      if (base64Size > maxSafeSize) {
-        console.warn("[EMAIL API] ADVERTENCIA: pdfBase64 es muy grande (", base64Size, "bytes). Se recomienda usar pdfUrl para evitar error 413.");
-      }
-    }
 
     // Email de origen: Configuración desde variables de entorno
-    // 
-    // IMPORTANTE: Para enviar a clientes, necesitas verificar un dominio en Resend.
-    // Configura estas variables de entorno en Vercel:
-    // - RESEND_FROM_EMAIL: Email del dominio verificado (ej: noreply@tudominio.com)
-    // - RESEND_FROM_NAME: Nombre que aparecerá como remitente (opcional)
-    //
-    // Si no tienes dominio verificado, Resend solo permite enviar a tu email registrado.
-    // Los dominios .vercel.app NO funcionan porque Vercel controla los DNS.
-    // Necesitas un dominio personalizado (aunque sea gratuito de otro proveedor).
-    
-    // Obtener email de origen desde variables de entorno
     const resendFromEmail = import.meta.env.RESEND_FROM_EMAIL;
     const resendFromName = import.meta.env.RESEND_FROM_NAME || "Playbox";
     
-    // Si no hay email configurado, usar el email de la sucursal o un fallback
     let fromEmail: string;
     if (resendFromEmail) {
-      // Usar el email configurado en variables de entorno
       fromEmail = resendFromEmail;
     } else if (branchEmail && branchEmail.includes('@')) {
-      // Intentar usar el email de la sucursal si es válido
       fromEmail = branchEmail;
     } else {
-      // Fallback: mostrar error explicativo
       console.error("[EMAIL API] ERROR: RESEND_FROM_EMAIL no configurada en variables de entorno");
       return new Response(
         JSON.stringify({ 
@@ -182,7 +122,6 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
     
-    // Nombre del remitente: usar variable de entorno o fallback
     const fromName = resendFromName || (branchName ? `${branchName} - Playbox` : "Playbox");
     
     // Validar que el email del destinatario sea válido
@@ -308,13 +247,10 @@ export const POST: APIRoute = async ({ request }) => {
                 </ul>
                 
                 ${branchName ? `
-                  <div style="background-color: #e0f2fe; border-left: 4px solid #1877F2; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                    <p style="margin: 0; font-weight: bold; color: #1e3a8a; margin-bottom: 10px;">📍 Información de la Sucursal:</p>
-                    <p style="margin: 5px 0;"><strong>Sucursal:</strong> ${branchName}</p>
-                    ${branchEmail ? `<p style="margin: 5px 0;"><strong>Email:</strong> ${branchEmail}</p>` : ""}
-                    ${branchPhone ? `<p style="margin: 5px 0;"><strong>Teléfono:</strong> ${branchPhone}</p>` : ""}
-                    ${branchAddress ? `<p style="margin: 5px 0;"><strong>Dirección:</strong> ${branchAddress}</p>` : ""}
-                  </div>
+                  <p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>
+                  ${branchEmail ? `<p><strong>Email:</strong> ${branchEmail}</p>` : ""}
+                  ${branchPhone ? `<p><strong>Teléfono:</strong> ${branchPhone}</p>` : ""}
+                  ${branchAddress ? `<p><strong>Dirección:</strong> ${branchAddress}</p>` : ""}
                 ` : ""}
                 
                 <p>Esperamos verlo pronto para entregarle su equipo.</p>
@@ -330,7 +266,7 @@ export const POST: APIRoute = async ({ request }) => {
         </html>
       `;
     } else {
-      // Email para cuando se crea la orden (comportamiento original)
+      // Email para cuando se crea la orden (EXACTAMENTE como en el proyecto de referencia)
       subject = `Notificación: Orden ${orderNumber} - Equipo ingresado`;
       htmlContent = `
         <!DOCTYPE html>
@@ -409,13 +345,14 @@ export const POST: APIRoute = async ({ request }) => {
                   </div>
                 </div>
                 
-                <p>En el archivo PDF adjunto encontrará todos los detalles de su orden, incluyendo:</p>
                 ${pdfUrl ? `
-                  <p style="margin-top: 10px;">También puede descargar el PDF haciendo clic en el siguiente enlace:</p>
+                  <p>Puede descargar el PDF con todos los detalles de su orden haciendo clic en el siguiente enlace:</p>
                   <div style="text-align: center; margin: 20px 0;">
                     <a href="${pdfUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">📄 Descargar PDF de la Orden</a>
                   </div>
-                ` : ''}
+                ` : `
+                  <p>En el archivo PDF adjunto encontrará todos los detalles de su orden, incluyendo:</p>
+                `}
                 <ul>
                   <li>Información del equipo ingresado</li>
                   <li>Servicios solicitados</li>
@@ -428,17 +365,9 @@ export const POST: APIRoute = async ({ request }) => {
                 
                 <p>Si tiene alguna consulta o necesita más información, no dude en contactarnos.</p>
                 
-                ${branchName ? `
-                  <div style="background-color: #e0f2fe; border-left: 4px solid #1877F2; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                    <p style="margin: 0; font-weight: bold; color: #1e3a8a; margin-bottom: 10px;">📍 Información de la Sucursal:</p>
-                    <p style="margin: 5px 0;"><strong>Sucursal:</strong> ${branchName}</p>
-                    ${branchEmail ? `<p style="margin: 5px 0;"><strong>Email:</strong> ${branchEmail}</p>` : ""}
-                    ${branchPhone ? `<p style="margin: 5px 0;"><strong>Teléfono:</strong> ${branchPhone}</p>` : ""}
-                    ${branchAddress ? `<p style="margin: 5px 0;"><strong>Dirección:</strong> ${branchAddress}</p>` : ""}
-                  </div>
-                ` : ""}
-                
                 <p>Atentamente,<br><strong>Equipo Playbox</strong></p>
+                
+                ${branchName ? `<p style="margin-top: 20px;"><strong>Sucursal:</strong> ${branchName}</p>` : ""}
               </div>
               <div class="footer">
                 <p>Este es un correo automático, por favor no responda a este mensaje.</p>
@@ -471,24 +400,115 @@ export const POST: APIRoute = async ({ request }) => {
       ],
     };
 
-    // EXACTAMENTE como en el proyecto de referencia:
-    // Solo adjuntar PDF si está disponible en base64 (no si tenemos URL)
-    // Si tenemos URL, el PDF ya está disponible para descarga y no necesitamos adjuntarlo
-    if (pdfBase64 && !pdfUrl && emailType === 'order_created') {
-      // Verificar tamaño del base64 (aproximadamente 1.33x el tamaño del archivo)
-      const base64Size = pdfBase64.length;
-      const maxSize = 4 * 1024 * 1024; // 4MB límite típico para attachments
+    // Adjuntar PDF: Priorizar pdfBase64 si está disponible (mismo PDF del preview)
+    // Si no hay pdfBase64, descargar desde pdfUrl (storage)
+    if (emailType === 'order_created') {
+      let pdfToAttach: string | null = null;
       
-      if (base64Size > maxSize) {
-        console.warn("[EMAIL API] PDF demasiado grande para adjuntar, solo se enviará el link si está disponible");
-        // No adjuntar si es muy grande
-      } else {
+      if (pdfBase64) {
+        // Usar pdfBase64 directamente si está disponible (mismo PDF del preview, garantiza formato correcto)
+        pdfToAttach = pdfBase64;
+      const base64Size = pdfBase64.length;
+        console.log("[EMAIL API] Usando pdfBase64 para adjuntar (tamaño:", base64Size, "caracteres) - MISMO PDF DEL PREVIEW");
+      } else if (pdfUrl && pdfUrl.includes('supabase.co')) {
+        // Si no hay pdfBase64 pero hay pdfUrl de storage, descargarlo
+        // CRÍTICO: El PDF descargado debe ser exactamente igual al original para evitar corrupción
+        try {
+          console.log("[EMAIL API] ========================================");
+          console.log("[EMAIL API] No hay pdfBase64, descargando PDF desde Supabase Storage...");
+          console.log("[EMAIL API] URL del PDF:", pdfUrl);
+          
+          // Descargar el PDF SIN headers adicionales (Supabase Storage maneja el Content-Type automáticamente)
+          const pdfResponse = await fetch(pdfUrl);
+          
+          console.log("[EMAIL API] Response status:", pdfResponse.status);
+          console.log("[EMAIL API] Response ok:", pdfResponse.ok);
+          
+          if (pdfResponse.ok) {
+            // Verificar que el Content-Type sea application/pdf
+            const contentType = pdfResponse.headers.get('content-type');
+            const contentLength = pdfResponse.headers.get('content-length');
+            console.log("[EMAIL API] Content-Type:", contentType);
+            console.log("[EMAIL API] Content-Length:", contentLength, "bytes");
+            
+            if (contentType && !contentType.includes('application/pdf')) {
+              console.warn("[EMAIL API] ⚠️ ADVERTENCIA: Content-Type no es application/pdf:", contentType);
+            }
+            
+            // Leer como ArrayBuffer para preservar los bytes exactos (sin conversión de texto)
+            const pdfArrayBuffer = await pdfResponse.arrayBuffer();
+            console.log("[EMAIL API] PDF descargado como ArrayBuffer, tamaño:", pdfArrayBuffer.byteLength, "bytes");
+            
+            // Verificar que el tamaño coincida con el Content-Length si está disponible
+            if (contentLength) {
+              const expectedSize = parseInt(contentLength, 10);
+              if (pdfArrayBuffer.byteLength !== expectedSize) {
+                console.warn("[EMAIL API] ⚠️ ADVERTENCIA: Tamaño descargado (", pdfArrayBuffer.byteLength, ") no coincide con Content-Length (", expectedSize, ")");
+              } else {
+                console.log("[EMAIL API] ✅ Tamaño del PDF descargado coincide con Content-Length");
+              }
+            }
+            
+            // Verificar que el PDF comience con el header PDF correcto (%PDF)
+            const pdfHeader = new Uint8Array(pdfArrayBuffer.slice(0, 4));
+            const pdfHeaderString = String.fromCharCode(...pdfHeader);
+            console.log("[EMAIL API] Primeros 4 bytes del PDF:", pdfHeaderString);
+            
+            if (pdfHeaderString !== '%PDF') {
+              console.error("[EMAIL API] ❌ ERROR: El PDF descargado no tiene el header correcto. Esperado: %PDF, Obtenido:", pdfHeaderString);
+            } else {
+              console.log("[EMAIL API] ✅ Header PDF correcto verificado");
+            }
+            
+            // Convertir a base64 usando Buffer (preserva los bytes exactos)
+            pdfToAttach = Buffer.from(pdfArrayBuffer).toString('base64');
+            
+            // Validar que el base64 sea válido
+            if (!/^[A-Za-z0-9+/=]+$/.test(pdfToAttach)) {
+              console.warn("[EMAIL API] ⚠️ Base64 descargado contiene caracteres inválidos, limpiando...");
+              pdfToAttach = pdfToAttach.replace(/[^A-Za-z0-9+/=]/g, '');
+            }
+            
+            console.log("[EMAIL API] PDF descargado desde storage y convertido a base64 exitosamente");
+            console.log("[EMAIL API] Tamaño del base64:", pdfToAttach.length, "caracteres");
+            console.log("[EMAIL API] Primeros 50 caracteres:", pdfToAttach.substring(0, 50));
+            console.log("[EMAIL API] Últimos 50 caracteres:", pdfToAttach.substring(pdfToAttach.length - 50));
+            console.log("[EMAIL API] ========================================");
+          } else {
+            console.error("[EMAIL API] ❌ Error descargando PDF desde storage: status", pdfResponse.status);
+            console.error("[EMAIL API] Response headers:", Object.fromEntries(pdfResponse.headers.entries()));
+            const errorText = await pdfResponse.text();
+            console.error("[EMAIL API] Response body:", errorText.substring(0, 500));
+          }
+        } catch (fetchError: any) {
+          console.error("[EMAIL API] ❌ Error descargando PDF desde storage:", fetchError);
+          console.error("[EMAIL API] Error message:", fetchError.message);
+          console.error("[EMAIL API] Error stack:", fetchError.stack);
+        }
+      }
+      
+      // Adjuntar PDF si tenemos uno disponible
+      // IMPORTANTE: NO especificar 'type' - Resend lo detecta automáticamente desde el filename
+      // El formato debe ser EXACTAMENTE como en el proyecto de referencia
+      if (pdfToAttach) {
+        // Validar que el base64 sea válido antes de adjuntar
+        if (!/^[A-Za-z0-9+/=]+$/.test(pdfToAttach)) {
+          console.warn("[EMAIL API] Base64 contiene caracteres inválidos, limpiando...");
+          pdfToAttach = pdfToAttach.replace(/[^A-Za-z0-9+/=]/g, '');
+        }
+        
         emailData.attachments = [
           {
             filename: `orden-${orderNumber}.pdf`,
-            content: pdfBase64,
+            content: pdfToAttach, // Base64 puro, sin tipo MIME explícito (EXACTAMENTE como en el proyecto de referencia)
           },
         ];
+        console.log("[EMAIL API] PDF adjuntado al email exitosamente");
+        console.log("[EMAIL API] Tamaño del base64 adjuntado:", pdfToAttach.length, "caracteres");
+        console.log("[EMAIL API] Primeros 50 caracteres:", pdfToAttach.substring(0, 50));
+        console.log("[EMAIL API] Últimos 50 caracteres:", pdfToAttach.substring(pdfToAttach.length - 50));
+      } else {
+        console.warn("[EMAIL API] No se pudo obtener PDF para adjuntar (solo se enviará el link si pdfUrl está disponible)");
       }
     }
 
@@ -563,4 +583,3 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 };
-

@@ -38,6 +38,8 @@ export default function DispositivosRepuestos({ user }: DispositivosRepuestosPro
     modelo: '',
     tipo_dispositivo: '' as Dispositivo['tipo_dispositivo'],
   });
+  const [busquedaRepuesto, setBusquedaRepuesto] = useState('');
+  const [repuestosFiltradosPorBusqueda, setRepuestosFiltradosPorBusqueda] = useState<Repuesto[]>([]);
 
   const cargarDispositivos = useCallback(async () => {
     try {
@@ -256,9 +258,30 @@ export default function DispositivosRepuestos({ user }: DispositivosRepuestosPro
     }
   };
 
-  const repuestosFiltrados = dispositivoSeleccionado
-    ? repuestos.filter(r => r.dispositivo_id === dispositivoSeleccionado)
-    : repuestos;
+  // Filtrar repuestos según dispositivo seleccionado y búsqueda
+  const repuestosFiltrados = (() => {
+    // Si hay búsqueda activa y resultados filtrados, usar esos
+    if (busquedaRepuesto.length >= 2) {
+      if (repuestosFiltradosPorBusqueda.length > 0) {
+        return repuestosFiltradosPorBusqueda;
+      }
+      // Si hay búsqueda pero no resultados filtrados aún, filtrar sobre repuestos actuales
+      const busquedaLower = busquedaRepuesto.toLowerCase();
+      return repuestos.filter(r => {
+        const dispositivo = dispositivos.find(d => d.id === r.dispositivo_id);
+        const textoCompleto = `${dispositivo?.marca || ''} ${dispositivo?.modelo || ''} ${r.nombre}`.toLowerCase();
+        return textoCompleto.includes(busquedaLower) || r.nombre.toLowerCase().includes(busquedaLower);
+      });
+    }
+    
+    // Si hay dispositivo seleccionado pero no búsqueda, filtrar por dispositivo
+    if (dispositivoSeleccionado) {
+      return repuestos.filter(r => r.dispositivo_id === dispositivoSeleccionado);
+    }
+    
+    // Si no hay filtros, mostrar todos
+    return repuestos;
+  })();
 
   return (
     <div className="space-y-6">
@@ -271,12 +294,6 @@ export default function DispositivosRepuestos({ user }: DispositivosRepuestosPro
           >
             ➕ Nuevo Repuesto
           </button>
-          <button
-            onClick={() => abrirFormularioDispositivo()}
-            className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors shadow-sm"
-          >
-            ➕ Nuevo Dispositivo
-          </button>
         </div>
       </div>
 
@@ -286,23 +303,52 @@ export default function DispositivosRepuestos({ user }: DispositivosRepuestosPro
         </div>
       )}
 
-      {/* Filtro por dispositivo */}
+      {/* Búsqueda de repuestos por texto completo */}
       <div className="bg-white rounded-lg shadow-md p-4">
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Filtrar por Dispositivo
+          Buscar Repuesto (por marca, modelo o nombre)
         </label>
-        <select
-          className="w-full md:w-auto min-w-[300px] border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand focus:border-brand"
-          value={dispositivoSeleccionado || ''}
-          onChange={(e) => setDispositivoSeleccionado(e.target.value || null)}
-        >
-          <option value="">Todos los dispositivos</option>
-          {dispositivos.map((dispositivo) => (
-            <option key={dispositivo.id} value={dispositivo.id}>
-              {dispositivo.marca} {dispositivo.modelo}
-            </option>
-          ))}
-        </select>
+        <input
+          type="text"
+          placeholder="Ej: batería de iPhone 13 Pro Max"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand focus:border-brand"
+          value={busquedaRepuesto}
+          onChange={(e) => {
+            const busqueda = e.target.value.trim();
+            setBusquedaRepuesto(busqueda);
+            
+            if (busqueda.length >= 2) {
+              const busquedaLower = busqueda.toLowerCase();
+              // Buscar en dispositivos primero
+              const dispositivoEncontrado = dispositivos.find(d => {
+                const textoDispositivo = `${d.marca} ${d.modelo}`.toLowerCase();
+                return textoDispositivo.includes(busquedaLower) ||
+                       busquedaLower.includes(d.marca.toLowerCase()) ||
+                       busquedaLower.includes(d.modelo.toLowerCase());
+              });
+              
+              if (dispositivoEncontrado) {
+                setDispositivoSeleccionado(dispositivoEncontrado.id);
+                // Cargar repuestos del dispositivo encontrado
+                cargarRepuestos(dispositivoEncontrado.id);
+              } else {
+                // Buscar repuestos por nombre que contengan la búsqueda en todos los repuestos
+                const filtrados = repuestos.filter(r => {
+                  const dispositivo = dispositivos.find(d => d.id === r.dispositivo_id);
+                  const textoCompleto = `${dispositivo?.marca || ''} ${dispositivo?.modelo || ''} ${r.nombre}`.toLowerCase();
+                  return textoCompleto.includes(busquedaLower) || r.nombre.toLowerCase().includes(busquedaLower);
+                });
+                setRepuestosFiltradosPorBusqueda(filtrados);
+                setDispositivoSeleccionado(null);
+              }
+            } else {
+              setRepuestosFiltradosPorBusqueda([]);
+              if (busqueda.length === 0) {
+                setDispositivoSeleccionado(null);
+              }
+            }
+          }}
+        />
       </div>
 
       {/* Lista de dispositivos */}

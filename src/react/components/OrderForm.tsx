@@ -28,6 +28,7 @@ interface DeviceItem {
   unlockType: "code" | "pattern" | "none";
   deviceUnlockCode: string;
   deviceUnlockPattern: number[];
+  deviceUnlockPatternImage?: string; // Imagen del patrón como data URL
   problemDescription: string;
   checklistData: Record<string, "ok" | "damaged" | "replaced" | "no_probado">;
   selectedServices: Service[];
@@ -49,6 +50,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       unlockType: "none",
       deviceUnlockCode: "",
       deviceUnlockPattern: [],
+      deviceUnlockPatternImage: undefined,
       problemDescription: "",
       checklistData: {},
       selectedServices: [],
@@ -74,6 +76,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   // Estados para firmas
   const [clienteSignature, setClienteSignature] = useState<string>("");
   const [repuestosSeleccionados, setRepuestosSeleccionados] = useState<OrderRepuesto[]>([]);
+  const [clienteSinAbono, setClienteSinAbono] = useState<boolean>(false);
   
   // Referencias para sugerencias de dispositivos (una por equipo)
   const deviceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -110,6 +113,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       unlockType: "none",
       deviceUnlockCode: "",
       deviceUnlockPattern: [],
+      deviceUnlockPatternImage: undefined,
       problemDescription: "",
       checklistData: {},
       selectedServices: [],
@@ -212,16 +216,20 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         camposFaltantes.push(`Descripción excede ${MAX_DESCRIPTION_LENGTH} caracteres`);
       }
       
-      // Validar servicios seleccionados
+      // Validar servicios seleccionados (excepto si es solo diagnóstico)
+      const esSoloDiagnostico = device.selectedServices.length === 1 && 
+        device.selectedServices[0].name.toLowerCase().includes('diagnóstico');
+      
       if (!device.selectedServices || device.selectedServices.length === 0) {
         camposFaltantes.push("Servicios");
       }
       
-      // Validar que cada servicio tenga un precio válido
+      // Validar que cada servicio tenga un precio válido (excepto diagnóstico que puede ser 0)
       const serviciosSinPrecio: string[] = [];
       device.selectedServices.forEach(service => {
         const precio = device.servicePrices[service.id];
-        if (!precio || precio <= 0 || isNaN(precio)) {
+        const esDiagnostico = service.name.toLowerCase().includes('diagnóstico');
+        if (!esDiagnostico && (!precio || precio <= 0 || isNaN(precio))) {
           serviciosSinPrecio.push(service.name);
         }
       });
@@ -349,18 +357,33 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           sucursalId = tech?.sucursal_id || null;
           
           // Si el usuario es admin y no tiene sucursal_id, usar sucursal 1 por defecto
+          // IMPORTANTE: Esto asegura que todas las órdenes de admin tengan una sucursal asignada
           if (!sucursalId && tech?.role === 'admin') {
-            // Buscar la primera sucursal (sucursal 1)
+            // Buscar la primera sucursal (sucursal 1) por nombre o por fecha de creación
             const { data: firstBranch, error: firstBranchError } = await supabase
               .from("branches")
               .select("id")
+              .or("name.ilike.%Sucursal 1%,name.ilike.%sucursal 1%")
               .order("created_at", { ascending: true })
               .limit(1)
               .maybeSingle();
             
-            if (!firstBranchError && firstBranch) {
+            // Si no se encuentra "Sucursal 1" por nombre, buscar la primera creada
+            if (!firstBranch && !firstBranchError) {
+              const { data: firstCreatedBranch, error: firstCreatedError } = await supabase
+                .from("branches")
+                .select("id")
+                .order("created_at", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+              
+              if (!firstCreatedError && firstCreatedBranch) {
+                sucursalId = firstCreatedBranch.id;
+                console.log("[ORDER FORM] Admin sin sucursal asignada, usando primera sucursal creada:", sucursalId);
+              }
+            } else if (!firstBranchError && firstBranch) {
               sucursalId = firstBranch.id;
-              console.log("[ORDER FORM] Admin sin sucursal asignada, usando sucursal por defecto:", sucursalId);
+              console.log("[ORDER FORM] Admin sin sucursal asignada, usando Sucursal 1:", sucursalId);
             }
           }
           
@@ -374,7 +397,16 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
             
             if (!branchError && branch) {
               branchData = branch;
+              console.log("[ORDER FORM] Datos de sucursal cargados:", {
+                id: branch.id,
+                name: branch.name,
+                razon_social: branch.razon_social
+              });
+            } else {
+              console.warn("[ORDER FORM] Error cargando datos de sucursal:", branchError);
             }
+          } else {
+            console.warn("[ORDER FORM] No se pudo asignar sucursal para admin");
           }
         }
       }
@@ -396,7 +428,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         device_serial_number: device.deviceSerial || null,
         device_unlock_code: device.unlockType === "code" ? device.deviceUnlockCode : null,
         device_unlock_pattern: device.unlockType === "pattern" && device.deviceUnlockPattern.length > 0 
-          ? device.deviceUnlockPattern 
+          ? {
+              pattern: device.deviceUnlockPattern,
+              image: device.deviceUnlockPatternImage || null
+            }
           : null,
         problem_description: device.problemDescription,
         checklist_data: device.checklistData || {},
@@ -475,16 +510,36 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       }
 
       // Crear la orden única
+      // Nota: cliente_sin_abono se agregará después si el campo existe en la BD
+      // Ejecuta el script database/add_cliente_sin_abono_field.sql en Supabase primero
       const { data: order, error: orderError } = await supabase
         .from("work_orders")
         .insert(orderData)
         .select()
         .single();
+      
+      // Si la orden se creó exitosamente y el campo cliente_sin_abono existe, actualizarlo
+      if (order && !orderError && clienteSinAbono) {
+        try {
+          await supabase
+            .from("work_orders")
+            .update({ cliente_sin_abono: true })
+            .eq("id", order.id);
+        } catch (updateError: any) {
+          // Si el campo no existe, ignorar el error (el script SQL aún no se ha ejecutado)
+          if (!updateError.message?.includes("cliente_sin_abono")) {
+            console.warn("[ORDER FORM] No se pudo actualizar cliente_sin_abono:", updateError);
+          }
+        }
+      }
 
       if (orderError) throw orderError;
 
-      // Guardar repuestos de la orden
-      if (repuestosSeleccionados.length > 0) {
+      // Guardar repuestos de la orden (solo si no es solo diagnóstico)
+      const esSoloDiagnostico = devices.length > 0 && devices[0].selectedServices.length === 1 && 
+        devices[0].selectedServices[0].name.toLowerCase().includes('diagnóstico');
+      
+      if (repuestosSeleccionados.length > 0 && !esSoloDiagnostico) {
         for (const repuesto of repuestosSeleccionados) {
           await supabase.from("order_repuestos").insert({
             order_id: order.id,
@@ -743,50 +798,66 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           );
 
           // EXACTAMENTE como en el proyecto de referencia:
-          // Intentar subir PDF a Supabase Storage primero
+          // SIEMPRE generar pdfBase64 desde el mismo pdfBlob que se muestra en el preview
+          // Esto asegura que el PDF adjunto sea idéntico al preview
           let pdfUrl: string | null = null;
           let pdfBase64: string | null = null;
           
+          // PRIMERO: Generar base64 desde el mismo pdfBlob (el que se muestra en preview)
+          // CRÍTICO: Usar el mismo método que el proyecto de referencia para garantizar formato correcto
+          console.log("[ORDER FORM] Generando base64 del PDF desde el mismo blob del preview...");
+          console.log("[ORDER FORM] PDF Blob type:", pdfBlob.type, "size:", pdfBlob.size, "bytes");
+          try {
+            pdfBase64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const result = reader.result as string;
+                // Extraer solo la parte base64 (después de la coma)
+                const base64 = result.split(',')[1];
+                if (!base64 || base64.length === 0) {
+                  reject(new Error("No se pudo extraer base64 del blob"));
+                  return;
+                }
+                // Validar que el base64 sea válido (solo caracteres base64)
+                if (!/^[A-Za-z0-9+/=]+$/.test(base64)) {
+                  console.warn("[ORDER FORM] Base64 contiene caracteres inválidos, limpiando...");
+                  // Limpiar caracteres inválidos (espacios, saltos de línea, etc.)
+                  const cleanedBase64 = base64.replace(/[^A-Za-z0-9+/=]/g, '');
+                  resolve(cleanedBase64);
+                } else {
+                  resolve(base64);
+                }
+              };
+              reader.onerror = (error) => {
+                console.error("[ORDER FORM] Error en FileReader:", error);
+                reject(error);
+              };
+              reader.readAsDataURL(pdfBlob);
+            });
+            console.log("[ORDER FORM] Base64 generado exitosamente, tamaño:", pdfBase64.length, "caracteres");
+            console.log("[ORDER FORM] Primeros 50 caracteres del base64:", pdfBase64.substring(0, 50));
+            console.log("[ORDER FORM] Últimos 50 caracteres del base64:", pdfBase64.substring(pdfBase64.length - 50));
+          } catch (base64Error) {
+            console.error("[ORDER FORM] Error generando base64:", base64Error);
+          }
+          
+          // SEGUNDO: Intentar subir PDF a Supabase Storage (opcional, para tener URL también)
           try {
             console.log("[ORDER FORM] Intentando subir PDF a Supabase Storage...");
             pdfUrl = await uploadPDFToStorage(pdfBlob, createdOrder.order_number);
             if (pdfUrl) {
               console.log("[ORDER FORM] PDF subido exitosamente a:", pdfUrl);
             } else {
-              console.warn("[ORDER FORM] No se pudo subir PDF a Storage, usando base64 como fallback");
-              // Si no se pudo subir, generar base64 como fallback
-              pdfBase64 = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  const base64 = (reader.result as string).split(',')[1];
-                  resolve(base64);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(pdfBlob);
-              });
+              console.warn("[ORDER FORM] No se pudo subir PDF a Storage, pero tenemos base64");
             }
           } catch (uploadError) {
-            console.warn("[ORDER FORM] Error subiendo PDF a Storage, intentando adjuntar:", uploadError);
-            // Si falla la subida, convertir a base64 como fallback
-            try {
-              pdfBase64 = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  const base64 = (reader.result as string).split(',')[1];
-                  resolve(base64);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(pdfBlob);
-              });
-            } catch (base64Error) {
-              console.error("[ORDER FORM] Error generando base64:", base64Error);
-            }
+            console.warn("[ORDER FORM] Error subiendo PDF a Storage (no crítico, tenemos base64):", uploadError);
           }
           
-          // Asegurarse de que tenemos al menos uno de los dos
-          if (!pdfUrl && !pdfBase64) {
-            console.error("[ORDER FORM] No se pudo generar ni URL ni base64 del PDF");
-            // Intentar generar base64 una vez más como último recurso
+          // Asegurarse de que tenemos al menos pdfBase64
+          if (!pdfBase64) {
+            console.error("[ORDER FORM] ERROR CRÍTICO: No se pudo generar base64 del PDF");
+            // Intentar una vez más como último recurso
             try {
               pdfBase64 = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
@@ -804,6 +875,67 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
 
           // Solo enviar email si tenemos PDF
           if (pdfUrl || pdfBase64) {
+            // Preparar body del request - Priorizar pdfUrl si está disponible
+            const emailBody: any = {
+              to: selectedCustomer.email,
+              customerName: selectedCustomer.name,
+              orderNumber: createdOrder.order_number,
+              branchName: updatedBranchData?.name || updatedBranchData?.razon_social || branchData?.name || branchData?.razon_social,
+              branchEmail: updatedBranchData?.email || branchData?.email,
+              branchPhone: updatedBranchData?.phone || branchData?.phone,
+              branchAddress: updatedBranchData?.address || branchData?.address,
+            };
+
+            // Estrategia: Si pdfBase64 es pequeño (< 2MB), enviarlo en el body
+            // Si es grande, solo enviar pdfUrl y el servidor lo descargará desde storage
+            if (!pdfBase64) {
+              console.error("[ORDER FORM] ERROR: No se pudo generar pdfBase64 del PDF");
+              // Continuar sin email si no hay PDF
+            } else {
+              const base64Size = pdfBase64.length;
+              const maxBase64Size = 2 * 1024 * 1024; // 2MB máximo para base64 en el body
+              
+              if (base64Size <= maxBase64Size) {
+                // PDF es pequeño, enviarlo en el body
+                emailBody.pdfBase64 = pdfBase64;
+                emailBody.pdfUrl = pdfUrl || null;
+                console.log("[ORDER FORM] Enviando pdfBase64 en el body (tamaño:", base64Size, "caracteres)");
+              } else {
+                // PDF es muy grande, solo enviar pdfUrl
+                if (!pdfUrl) {
+                  console.warn("[ORDER FORM] PDF muy grande y no se pudo subir a storage, intentando subir nuevamente...");
+                  // Intentar subir una vez más
+                  try {
+                    const retryUrl = await uploadPDFToStorage(pdfBlob, createdOrder.order_number);
+                    if (retryUrl) {
+                      emailBody.pdfBase64 = null;
+                      emailBody.pdfUrl = retryUrl;
+                      console.log("[ORDER FORM] PDF subido exitosamente en segundo intento");
+                    } else {
+                      // Fallback: enviar pdfBase64 aunque sea grande (puede causar error 413)
+                      emailBody.pdfBase64 = pdfBase64;
+                      emailBody.pdfUrl = null;
+                      console.warn("[ORDER FORM] Usando pdfBase64 aunque sea grande (puede causar error)");
+                    }
+                  } catch (retryError) {
+                    // Fallback: enviar pdfBase64 aunque sea grande
+                    emailBody.pdfBase64 = pdfBase64;
+                    emailBody.pdfUrl = null;
+                    console.warn("[ORDER FORM] Error en segundo intento, usando pdfBase64 aunque sea grande");
+                  }
+                } else {
+                  emailBody.pdfBase64 = null;
+                  emailBody.pdfUrl = pdfUrl;
+                  console.log("[ORDER FORM] PDF muy grande, solo enviando pdfUrl (el servidor lo descargará desde storage)");
+                }
+              }
+            }
+
+            // Verificar tamaño del body antes de enviar
+            const bodyString = JSON.stringify(emailBody);
+            const bodySize = new Blob([bodyString]).size;
+            console.log("[ORDER FORM] Tamaño del body del email:", bodySize, "bytes (", (bodySize / 1024).toFixed(2), "KB)");
+
             // Enviar email para la orden creada
             console.log("[ORDER FORM] Enviando email de creación de orden:", createdOrder.order_number);
             const emailResponse = await fetch('/api/send-order-email', {
@@ -811,17 +943,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
               headers: {
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                to: selectedCustomer.email,
-                customerName: selectedCustomer.name,
-                orderNumber: createdOrder.order_number,
-                pdfBase64: pdfBase64, // Puede ser null si se subió a storage
-                pdfUrl: pdfUrl, // URL del PDF si se subió exitosamente
-                branchName: updatedBranchData?.name || updatedBranchData?.razon_social || branchData?.name || branchData?.razon_social,
-                branchEmail: updatedBranchData?.email || branchData?.email,
-                branchPhone: updatedBranchData?.phone || branchData?.phone,
-                branchAddress: updatedBranchData?.address || branchData?.address,
-              }),
+              body: bodyString,
             });
 
             if (!emailResponse.ok) {
@@ -994,6 +1116,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
                   updateDevice(device.id, { 
                     unlockType: type,
                     deviceUnlockPattern: [],
+      deviceUnlockPatternImage: undefined,
                     deviceUnlockCode: type === "none" ? "" : device.deviceUnlockCode
                   });
                 }
@@ -1054,8 +1177,11 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         
         {showPatternDrawer?.deviceId === device.id && (
           <PatternDrawer
-            onPatternComplete={(pattern) => {
-              updateDevice(device.id, { deviceUnlockPattern: pattern });
+            onPatternComplete={(pattern, patternImage) => {
+              updateDevice(device.id, { 
+                deviceUnlockPattern: pattern,
+                deviceUnlockPatternImage: patternImage 
+              });
               setShowPatternDrawer(null);
             }}
             onClose={() => setShowPatternDrawer(null)}
@@ -1396,17 +1522,34 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
       </div>
 
-      {/* Selector de Repuestos */}
-      {devices.length > 0 && devices[0].deviceModel && (
-        <div className="border-t border-slate-200 pt-6">
-          <RepuestosSelector
-            dispositivoMarca={devices[0].deviceModel.split(' ')[0] || ''}
-            dispositivoModelo={devices[0].deviceModel}
-            onRepuestosChange={setRepuestosSeleccionados}
-            repuestosIniciales={repuestosSeleccionados}
-          />
-        </div>
-      )}
+      {/* Selector de Repuestos - Solo mostrar si NO es solo diagnóstico */}
+      {devices.length > 0 && devices[0].deviceModel && (() => {
+        // Verificar si TODOS los servicios son solo diagnóstico
+        const todosServiciosSonDiagnostico = devices[0].selectedServices.length > 0 &&
+          devices[0].selectedServices.every(service => 
+            service.name.toLowerCase().includes('diagnóstico')
+          );
+        
+        if (todosServiciosSonDiagnostico) {
+          return null; // No mostrar repuestos si todos los servicios son solo diagnóstico
+        }
+        
+        // Extraer marca y modelo del dispositivo detectado
+        const deviceModelParts = devices[0].deviceModel.split(' ');
+        const marca = deviceModelParts[0] || '';
+        const modelo = devices[0].deviceModel;
+        
+        return (
+          <div className="border-t border-slate-200 pt-6">
+            <RepuestosSelector
+              dispositivoMarca={marca}
+              dispositivoModelo={modelo}
+              onRepuestosChange={setRepuestosSeleccionados}
+              repuestosIniciales={repuestosSeleccionados}
+            />
+          </div>
+        );
+      })()}
 
       {/* Total General - Suma de todos los equipos */}
       {(() => {
@@ -1448,6 +1591,21 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           </div>
         );
       })()}
+
+      {/* Checkbox para cliente sin abono */}
+      <div className="border-t border-slate-200 pt-6">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={clienteSinAbono}
+            onChange={(e) => setClienteSinAbono(e.target.checked)}
+            className="w-5 h-5 text-brand"
+          />
+          <span className="text-sm font-medium text-slate-700">
+            El cliente no dejó abonado nada del precio del servicio
+          </span>
+        </label>
+      </div>
 
       {/* Firmas */}
       <div className="border-t border-slate-200 pt-6">

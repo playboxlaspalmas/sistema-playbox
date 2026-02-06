@@ -787,46 +787,73 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
       let pdfBase64: string | null = null;
       
       try {
+        // PRIMERO: Generar base64 desde el mismo pdfBlob (el que se muestra en preview)
+        // CRÍTICO: Usar el mismo método que el proyecto de referencia para garantizar formato correcto
+        console.log("[ORDERS TABLE] Generando base64 del PDF desde el mismo blob del preview...");
+        console.log("[ORDERS TABLE] PDF Blob type:", pdfBlob.type, "size:", pdfBlob.size, "bytes");
+        pdfBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            // Extraer solo la parte base64 (después de la coma)
+            const base64 = result.split(',')[1];
+            if (!base64 || base64.length === 0) {
+              reject(new Error("No se pudo extraer base64 del blob"));
+              return;
+            }
+            // Validar que el base64 sea válido (solo caracteres base64)
+            if (!/^[A-Za-z0-9+/=]+$/.test(base64)) {
+              console.warn("[ORDERS TABLE] Base64 contiene caracteres inválidos, limpiando...");
+              // Limpiar caracteres inválidos (espacios, saltos de línea, etc.)
+              const cleanedBase64 = base64.replace(/[^A-Za-z0-9+/=]/g, '');
+              resolve(cleanedBase64);
+            } else {
+              resolve(base64);
+            }
+          };
+          reader.onerror = (error) => {
+            console.error("[ORDERS TABLE] Error en FileReader:", error);
+            reject(error);
+          };
+          reader.readAsDataURL(pdfBlob);
+        });
+        console.log("[ORDERS TABLE] Base64 generado exitosamente, tamaño:", pdfBase64.length, "caracteres");
+        console.log("[ORDERS TABLE] Primeros 50 caracteres del base64:", pdfBase64.substring(0, 50));
+        console.log("[ORDERS TABLE] Últimos 50 caracteres del base64:", pdfBase64.substring(pdfBase64.length - 50));
+        
+        // SEGUNDO: Intentar subir PDF a Supabase Storage (opcional, para tener URL también)
         console.log("[ORDERS TABLE] Intentando subir PDF a Supabase Storage...");
         const { uploadPDFToStorage } = await import('@/lib/upload-pdf');
         pdfUrl = await uploadPDFToStorage(pdfBlob, order.order_number);
         if (pdfUrl) {
           console.log("[ORDERS TABLE] PDF subido exitosamente a:", pdfUrl);
         } else {
-          console.warn("[ORDERS TABLE] No se pudo subir PDF a Storage, usando base64 como fallback");
-          // Si no se pudo subir, generar base64 como fallback
-          pdfBase64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(pdfBlob);
-          });
+          console.warn("[ORDERS TABLE] No se pudo subir PDF a Storage, pero tenemos base64");
         }
       } catch (uploadError) {
-        console.warn("[ORDERS TABLE] Error subiendo PDF a Storage, intentando adjuntar:", uploadError);
-        // Si falla la subida, convertir a base64 como fallback
-        try {
-          pdfBase64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(pdfBlob);
-          });
-        } catch (base64Error) {
-          console.error("[ORDERS TABLE] Error generando base64:", base64Error);
+        console.warn("[ORDERS TABLE] Error subiendo PDF a Storage (no crítico, tenemos base64):", uploadError);
+        // Si falla la subida pero no tenemos base64, intentar generarlo
+        if (!pdfBase64) {
+          try {
+            pdfBase64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const base64 = (reader.result as string).split(',')[1];
+                resolve(base64);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(pdfBlob);
+            });
+          } catch (base64Error) {
+            console.error("[ORDERS TABLE] Error generando base64:", base64Error);
+          }
         }
       }
       
-      // Asegurarse de que tenemos al menos uno de los dos
-      if (!pdfUrl && !pdfBase64) {
-        console.error("[ORDERS TABLE] No se pudo generar ni URL ni base64 del PDF");
-        // Intentar generar base64 una vez más como último recurso
+      // Asegurarse de que tenemos al menos pdfBase64
+      if (!pdfBase64) {
+        console.error("[ORDERS TABLE] ERROR CRÍTICO: No se pudo generar base64 del PDF");
+        // Intentar una vez más como último recurso
         try {
           pdfBase64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -842,16 +869,69 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
         }
       }
 
-      // Preparar body del request - EXACTAMENTE como en el proyecto de referencia
-      const requestBody = {
+      // Preparar body del request
+      // Estrategia: Si pdfBase64 es pequeño (< 2MB), enviarlo en el body
+      // Si es grande, solo enviar pdfUrl y el servidor lo descargará desde storage
+      if (!pdfBase64) {
+        console.error("[ORDERS TABLE] ERROR: No se pudo generar pdfBase64 del PDF");
+        alert("❌ Error: No se pudo generar el PDF para enviar por email.");
+        setResendingEmail(null);
+        return;
+      }
+
+      const base64Size = pdfBase64.length;
+      
+      // Preparar body base sin PDF
+      const requestBodyBase: any = {
         to: order.customer.email,
         customerName: order.customer.name,
         orderNumber: order.order_number,
-        pdfBase64: pdfBase64, // Puede ser null si se subió a storage
-        pdfUrl: pdfUrl, // URL del PDF si se subió exitosamente
         branchName: branchData?.name || branchData?.razon_social || order.sucursal?.name || order.sucursal?.razon_social,
         branchEmail: branchData?.email || order.sucursal?.email,
+        branchPhone: branchData?.phone || order.sucursal?.phone,
+        branchAddress: branchData?.address || order.sucursal?.address,
       };
+
+      // CRÍTICO: SIEMPRE intentar enviar pdfBase64 primero (es el mismo PDF del preview)
+      // Calcular el tamaño real del body completo con pdfBase64
+      const requestBodyWithBase64: any = {
+        ...requestBodyBase,
+        pdfBase64: pdfBase64,
+        pdfUrl: pdfUrl || null,
+      };
+      
+      const bodyStringWithBase64 = JSON.stringify(requestBodyWithBase64);
+      const bodySizeWithBase64 = new Blob([bodyStringWithBase64]).size;
+      const maxBodySize = 4.3 * 1024 * 1024; // 4.3MB límite conservador (Vercel tiene 4.5MB)
+      
+      console.log("[ORDERS TABLE] Tamaño real del body con pdfBase64:", bodySizeWithBase64, "bytes (", (bodySizeWithBase64 / 1024 / 1024).toFixed(2), "MB)");
+      console.log("[ORDERS TABLE] Límite máximo:", maxBodySize, "bytes (", (maxBodySize / 1024 / 1024).toFixed(2), "MB)");
+
+      let requestBody: any;
+      
+      if (bodySizeWithBase64 <= maxBodySize) {
+        // PDF cabe en el body: enviar pdfBase64 directamente (garantiza formato correcto)
+        requestBody = requestBodyWithBase64;
+        console.log("[ORDERS TABLE] ✅ Enviando pdfBase64 en el body - MISMO PDF DEL PREVIEW (garantiza formato correcto)");
+      } else {
+        // PDF muy grande: enviar pdfUrl y el servidor lo descargará desde storage
+        // NOTA: Esto puede causar corrupción, pero es necesario para PDFs muy grandes
+        console.warn("[ORDERS TABLE] ⚠️ Body con pdfBase64 excede el límite (", (bodySizeWithBase64 / 1024 / 1024).toFixed(2), "MB), usando pdfUrl como fallback");
+        
+        if (!pdfUrl) {
+          console.error("[ORDERS TABLE] ERROR: PDF muy grande y no se pudo subir a storage");
+          alert(`❌ Error: El PDF es demasiado grande (${(bodySizeWithBase64 / 1024 / 1024).toFixed(2)} MB). Por favor, intenta optimizar el PDF o subirlo a storage primero.`);
+          setResendingEmail(null);
+          return;
+        }
+        
+        requestBody = {
+          ...requestBodyBase,
+          pdfBase64: null,
+          pdfUrl: pdfUrl,
+        };
+        console.warn("[ORDERS TABLE] ADVERTENCIA: El PDF descargado desde storage puede llegar corrupto. Se recomienda optimizar el PDF.");
+      }
 
       // Verificar tamaño del body antes de enviar
       const bodyString = JSON.stringify(requestBody);
@@ -860,8 +940,8 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
       console.log("[ORDERS TABLE] ========================================");
       console.log("[ORDERS TABLE] Preparando envío de email:");
       console.log("[ORDERS TABLE] Tamaño del body:", bodySize, "bytes (", (bodySize / 1024).toFixed(2), "KB)");
-      console.log("[ORDERS TABLE] Tiene pdfUrl:", !!pdfUrl);
-      console.log("[ORDERS TABLE] Tiene pdfBase64:", !!pdfBase64, pdfBase64 ? `(tamaño: ${pdfBase64Size} bytes)` : "");
+      console.log("[ORDERS TABLE] Tiene pdfUrl:", !!requestBody.pdfUrl);
+      console.log("[ORDERS TABLE] Tiene pdfBase64:", !!requestBody.pdfBase64, requestBody.pdfBase64 ? `(tamaño: ${requestBody.pdfBase64.length} caracteres)` : "");
       console.log("[ORDERS TABLE] ========================================");
       
       const maxSize = 4 * 1024 * 1024; // 4MB límite de Vercel
@@ -872,7 +952,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
         return;
       }
 
-      // Enviar email SOLO con pdfUrl (nunca con pdfBase64 para evitar error 413)
+      // Enviar email
       console.log("[ORDERS TABLE] Enviando request a /api/send-order-email...");
       let emailResponse;
       try {

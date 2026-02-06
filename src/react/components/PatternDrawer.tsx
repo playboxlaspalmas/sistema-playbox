@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 
 interface PatternDrawerProps {
-  onPatternComplete: (pattern: number[]) => void;
+  onPatternComplete: (pattern: number[], patternImage?: string) => void;
   onClose: () => void;
 }
 
@@ -126,7 +126,14 @@ export default function PatternDrawer({ onPatternComplete, onClose }: PatternDra
 
   function handleEnd() {
     if (isDrawing && pattern.length >= 4) {
-      onPatternComplete(pattern);
+      // Convertir canvas a imagen antes de completar
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const patternImage = canvas.toDataURL('image/png');
+        onPatternComplete(pattern, patternImage);
+      } else {
+        onPatternComplete(pattern);
+      }
     } else if (isDrawing) {
       alert("El patrón debe tener al menos 4 puntos");
       setPattern([]);

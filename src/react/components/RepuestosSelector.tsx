@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatCLP } from '@/lib/currency';
 import type { Repuesto, Dispositivo, OrderRepuesto } from '@/types';
@@ -20,7 +20,18 @@ export default function RepuestosSelector({
   const [repuestos, setRepuestos] = useState<Repuesto[]>([]);
   const [repuestosSeleccionados, setRepuestosSeleccionados] = useState<OrderRepuesto[]>(repuestosIniciales);
   const [dispositivoSeleccionado, setDispositivoSeleccionado] = useState<string | null>(null);
+  const [dispositivoNombre, setDispositivoNombre] = useState<string>('');
+  const [repuestoNombre, setRepuestoNombre] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [showDispositivoSuggestions, setShowDispositivoSuggestions] = useState(false);
+  const [showRepuestoSuggestions, setShowRepuestoSuggestions] = useState(false);
+  const [dispositivoSuggestions, setDispositivoSuggestions] = useState<Dispositivo[]>([]);
+  const [repuestoSuggestions, setRepuestoSuggestions] = useState<Repuesto[]>([]);
+  
+  const dispositivoInputRef = useRef<HTMLInputElement>(null);
+  const repuestoInputRef = useRef<HTMLInputElement>(null);
+  const dispositivoSuggestionsRef = useRef<HTMLDivElement>(null);
+  const repuestoSuggestionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     cargarDispositivos();
@@ -42,6 +53,20 @@ export default function RepuestosSelector({
     onRepuestosChange(repuestosSeleccionados);
   }, [repuestosSeleccionados, onRepuestosChange]);
 
+  // Cerrar sugerencias al hacer clic fuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dispositivoSuggestionsRef.current && !dispositivoSuggestionsRef.current.contains(event.target as Node)) {
+        setShowDispositivoSuggestions(false);
+      }
+      if (repuestoSuggestionsRef.current && !repuestoSuggestionsRef.current.contains(event.target as Node)) {
+        setShowRepuestoSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const cargarDispositivos = async () => {
     try {
       const { data, error } = await supabase
@@ -60,21 +85,49 @@ export default function RepuestosSelector({
 
   const buscarDispositivoPorMarcaModelo = async () => {
     try {
+      // Buscar dispositivo que coincida con marca y modelo
       const { data, error } = await supabase
         .from('dispositivos')
         .select('*')
-        .eq('marca', dispositivoMarca)
-        .eq('modelo', dispositivoModelo)
+        .ilike('marca', `%${dispositivoMarca}%`)
+        .ilike('modelo', `%${dispositivoModelo}%`)
         .eq('activo', true)
         .maybeSingle();
 
       if (error) throw error;
       if (data) {
         setDispositivoSeleccionado(data.id);
+        setDispositivoNombre(`${data.marca} ${data.modelo}`);
+      } else {
+        // Si no se encuentra, usar el nombre completo como fallback
+        setDispositivoNombre(`${dispositivoMarca} ${dispositivoModelo}`);
       }
     } catch (err) {
       console.error('Error buscando dispositivo:', err);
     }
+  };
+
+  const buscarDispositivos = (query: string) => {
+    if (!query || query.length < 2) {
+      setDispositivoSuggestions([]);
+      setShowDispositivoSuggestions(false);
+      return;
+    }
+
+    const queryLower = query.toLowerCase();
+    const filtered = dispositivos.filter(d => 
+      `${d.marca} ${d.modelo}`.toLowerCase().includes(queryLower) ||
+      d.marca.toLowerCase().includes(queryLower) ||
+      d.modelo.toLowerCase().includes(queryLower)
+    );
+    setDispositivoSuggestions(filtered.slice(0, 10));
+    setShowDispositivoSuggestions(true);
+  };
+
+  const seleccionarDispositivo = (dispositivo: Dispositivo) => {
+    setDispositivoSeleccionado(dispositivo.id);
+    setDispositivoNombre(`${dispositivo.marca} ${dispositivo.modelo}`);
+    setShowDispositivoSuggestions(false);
   };
 
   const cargarRepuestos = async (dispositivoId: string) => {
@@ -96,25 +149,78 @@ export default function RepuestosSelector({
     }
   };
 
-  const agregarRepuesto = (repuesto: Repuesto) => {
-    const dispositivo = repuesto.dispositivo || dispositivos.find(d => d.id === repuesto.dispositivo_id);
-    if (!dispositivo) return;
+  const buscarRepuestos = (query: string) => {
+    if (!query || query.length < 2) {
+      setRepuestoSuggestions([]);
+      setShowRepuestoSuggestions(false);
+      return;
+    }
 
-    const nuevoRepuesto: OrderRepuesto = {
-      id: `temp-${Date.now()}`,
-      order_id: '',
-      repuesto_id: repuesto.id,
-      repuesto_nombre: repuesto.nombre,
-      dispositivo_marca: dispositivo.marca,
-      dispositivo_modelo: dispositivo.modelo,
-      cantidad: 1,
-      precio_costo: repuesto.precio_costo,
-      precio_venta: repuesto.precio_venta,
-      subtotal: repuesto.precio_venta,
-      created_at: new Date().toISOString(),
-    };
+    if (!dispositivoSeleccionado) {
+      // Si no hay dispositivo seleccionado, buscar en todos los repuestos
+      const queryLower = query.toLowerCase();
+      const filtered = repuestos.filter(r => 
+        r.nombre.toLowerCase().includes(queryLower)
+      );
+      setRepuestoSuggestions(filtered.slice(0, 10));
+      setShowRepuestoSuggestions(true);
+    } else {
+      // Buscar solo en los repuestos del dispositivo seleccionado
+      const queryLower = query.toLowerCase();
+      const filtered = repuestos.filter(r => 
+        r.nombre.toLowerCase().includes(queryLower)
+      );
+      setRepuestoSuggestions(filtered.slice(0, 10));
+      setShowRepuestoSuggestions(true);
+    }
+  };
 
-    setRepuestosSeleccionados([...repuestosSeleccionados, nuevoRepuesto]);
+  const agregarRepuesto = (repuesto?: Repuesto) => {
+    if (repuesto) {
+      // Agregar repuesto existente
+      const dispositivo = repuesto.dispositivo || dispositivos.find(d => d.id === repuesto.dispositivo_id);
+      if (!dispositivo) return;
+
+      const nuevoRepuesto: OrderRepuesto = {
+        id: `temp-${Date.now()}`,
+        order_id: '',
+        repuesto_id: repuesto.id,
+        repuesto_nombre: repuesto.nombre,
+        dispositivo_marca: dispositivo.marca,
+        dispositivo_modelo: dispositivo.modelo,
+        cantidad: 1,
+        precio_costo: repuesto.precio_costo,
+        precio_venta: repuesto.precio_venta,
+        subtotal: repuesto.precio_venta,
+        created_at: new Date().toISOString(),
+      };
+
+      setRepuestosSeleccionados([...repuestosSeleccionados, nuevoRepuesto]);
+      setRepuestoNombre('');
+      setShowRepuestoSuggestions(false);
+    } else if (repuestoNombre.trim() && dispositivoSeleccionado) {
+      // Agregar repuesto manual (no existe en BD)
+      const dispositivo = dispositivos.find(d => d.id === dispositivoSeleccionado);
+      if (!dispositivo) return;
+
+      const nuevoRepuesto: OrderRepuesto = {
+        id: `temp-${Date.now()}`,
+        order_id: '',
+        repuesto_id: '', // No tiene ID porque no existe en BD
+        repuesto_nombre: repuestoNombre.trim(),
+        dispositivo_marca: dispositivo.marca,
+        dispositivo_modelo: dispositivo.modelo,
+        cantidad: 1,
+        precio_costo: 0,
+        precio_venta: 0,
+        subtotal: 0,
+        created_at: new Date().toISOString(),
+      };
+
+      setRepuestosSeleccionados([...repuestosSeleccionados, nuevoRepuesto]);
+      setRepuestoNombre('');
+      setShowRepuestoSuggestions(false);
+    }
   };
 
   const eliminarRepuesto = (index: number) => {
@@ -148,35 +254,139 @@ export default function RepuestosSelector({
         )}
       </div>
 
-      {/* Selector de dispositivo si no coincide con el dispositivo de la orden */}
-      {(!dispositivoSeleccionado || !dispositivoMarca || !dispositivoModelo) && (
-        <div>
+      {/* Selector de dispositivo con autocompletado - Solo mostrar si no está detectado automáticamente */}
+      {!dispositivoSeleccionado && (
+        <div className="relative">
           <label className="block text-sm font-medium text-slate-700 mb-2">
-            Seleccionar Dispositivo para Repuestos
+            Dispositivo para Repuestos
           </label>
-          <select
-            value={dispositivoSeleccionado || ''}
-            onChange={(e) => setDispositivoSeleccionado(e.target.value || null)}
+          <input
+            ref={dispositivoInputRef}
+            type="text"
+            value={dispositivoNombre}
+            onChange={(e) => {
+              setDispositivoNombre(e.target.value);
+              buscarDispositivos(e.target.value);
+            }}
+            onFocus={() => {
+              if (dispositivoNombre.length >= 2) {
+                buscarDispositivos(dispositivoNombre);
+              }
+            }}
+            placeholder="Escriba marca y modelo del dispositivo..."
             className="w-full border border-slate-300 rounded-md px-3 py-2"
-          >
-            <option value="">Seleccionar dispositivo...</option>
-            {dispositivos.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.marca} {d.modelo}
-              </option>
-            ))}
-          </select>
+          />
+          {showDispositivoSuggestions && dispositivoSuggestions.length > 0 && (
+            <div
+              ref={dispositivoSuggestionsRef}
+              className="absolute z-10 w-full mt-1 bg-white border border-slate-300 rounded-md shadow-lg max-h-60 overflow-y-auto"
+            >
+              {dispositivoSuggestions.map((d) => (
+                <div
+                  key={d.id}
+                  onClick={() => seleccionarDispositivo(d)}
+                  className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-b-0"
+                >
+                  <div className="font-medium text-slate-900">{d.marca} {d.modelo}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Lista de repuestos disponibles */}
+      {/* Mostrar dispositivo seleccionado */}
       {dispositivoSeleccionado && (
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-slate-900">
+              Dispositivo: {dispositivoNombre}
+            </span>
+            <button
+              onClick={() => {
+                setDispositivoSeleccionado(null);
+                setDispositivoNombre('');
+                setRepuestos([]);
+                setRepuestoNombre('');
+              }}
+              className="text-xs text-red-600 hover:text-red-800"
+            >
+              Cambiar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Agregar repuesto - Solo mostrar si hay dispositivo seleccionado */}
+      {dispositivoSeleccionado && (
+        <div className="relative">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Agregar Repuesto
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <input
+                ref={repuestoInputRef}
+                type="text"
+                value={repuestoNombre}
+                onChange={(e) => {
+                  setRepuestoNombre(e.target.value);
+                  buscarRepuestos(e.target.value);
+                }}
+                onFocus={() => {
+                  if (repuestoNombre.length >= 2) {
+                    buscarRepuestos(repuestoNombre);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    agregarRepuesto();
+                  }
+                }}
+                placeholder="Escriba el nombre del repuesto..."
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+              />
+              {showRepuestoSuggestions && repuestoSuggestions.length > 0 && (
+                <div
+                  ref={repuestoSuggestionsRef}
+                  className="absolute z-10 w-full mt-1 bg-white border border-slate-300 rounded-md shadow-lg max-h-60 overflow-y-auto"
+                >
+                  {repuestoSuggestions.map((r) => (
+                    <div
+                      key={r.id}
+                      onClick={() => agregarRepuesto(r)}
+                      className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-b-0"
+                    >
+                      <div className="font-medium text-slate-900">{r.nombre}</div>
+                      <div className="text-xs text-slate-600">
+                        Stock: {r.stock_actual} | Precio: {formatCLP(r.precio_venta)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => agregarRepuesto()}
+              disabled={!repuestoNombre.trim()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Agregar
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Escriba el nombre del repuesto o selecciónelo de las sugerencias. Puede agregar repuestos que no existan en el stock.
+          </p>
+        </div>
+      )}
+
+      {/* Lista de repuestos disponibles (solo si hay dispositivo seleccionado y hay repuestos en stock) */}
+      {dispositivoSeleccionado && repuestos.length > 0 && (
         <div className="bg-slate-50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-slate-700 mb-3">Repuestos Disponibles</h4>
+          <h4 className="text-sm font-medium text-slate-700 mb-3">Repuestos Disponibles en Stock</h4>
           {loading ? (
             <p className="text-slate-600 text-sm">Cargando repuestos...</p>
-          ) : repuestos.length === 0 ? (
-            <p className="text-slate-600 text-sm">No hay repuestos disponibles para este dispositivo</p>
           ) : (
             <div className="space-y-2 max-h-40 overflow-y-auto">
               {repuestos.map((repuesto) => (
@@ -192,10 +402,9 @@ export default function RepuestosSelector({
                   </div>
                   <button
                     onClick={() => agregarRepuesto(repuesto)}
-                    disabled={repuesto.stock_actual <= 0}
-                    className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
                   >
-                    Agregar
+                    {repuesto.stock_actual <= 0 ? 'Agregar (sin stock)' : 'Agregar'}
                   </button>
                 </div>
               ))}

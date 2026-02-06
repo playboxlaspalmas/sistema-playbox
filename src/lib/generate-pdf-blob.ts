@@ -6,6 +6,58 @@ import { formatCLP } from "./currency";
 import { formatDate, formatDateTime } from "./date";
 import { getSystemSettings } from "./settings";
 
+/**
+ * Optimiza una imagen Blob convirtiéndola a JPEG con compresión
+ */
+async function optimizeImageBlob(blob: Blob, quality: number = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('No se pudo obtener contexto del canvas'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      // Convertir a JPEG con compresión
+      const optimizedDataUrl = canvas.toDataURL('image/jpeg', quality);
+      URL.revokeObjectURL(img.src);
+      resolve(optimizedDataUrl);
+    };
+    img.onerror = reject;
+    const objectUrl = URL.createObjectURL(blob);
+    img.src = objectUrl;
+  });
+}
+
+/**
+ * Optimiza una imagen desde data URL convirtiéndola a JPEG con compresión
+ */
+async function optimizeImageDataUrl(dataUrl: string, quality: number = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('No se pudo obtener contexto del canvas'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      // Convertir a JPEG con compresión
+      const optimizedDataUrl = canvas.toDataURL('image/jpeg', quality);
+      resolve(optimizedDataUrl);
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
 export async function generatePDFBlob(
   order: WorkOrder & { customer?: Customer; sucursal?: Branch | null },
   services: Service[],
@@ -19,6 +71,7 @@ export async function generatePDFBlob(
   // Cargar datos actualizados de la sucursal desde la base de datos
   // Esto asegura que el PDF siempre refleje los datos más recientes de la sucursal
   let branchData = order.sucursal;
+  
   if (order.sucursal_id) {
     const { data: updatedBranch, error: branchError } = await supabase
       .from("branches")
@@ -44,7 +97,27 @@ export async function generatePDFBlob(
       console.warn("[PDF] No se encontró sucursal con ID:", order.sucursal_id);
     }
   } else {
-    console.warn("[PDF] Orden no tiene sucursal_id");
+    console.warn("[PDF] Orden no tiene sucursal_id, buscando Sucursal 1 por defecto");
+    
+    // Si no hay sucursal_id, buscar "Sucursal 1" por defecto
+    // Esto es especialmente útil cuando un admin crea una orden sin sucursal asignada
+    const { data: defaultBranch, error: defaultBranchError } = await supabase
+      .from("branches")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    
+    if (!defaultBranchError && defaultBranch) {
+      branchData = defaultBranch;
+      console.log("[PDF] Usando sucursal por defecto (primera creada):", {
+        id: defaultBranch.id,
+        name: defaultBranch.name,
+        razon_social: defaultBranch.razon_social
+      });
+    } else {
+      console.warn("[PDF] No se pudo cargar sucursal por defecto");
+    }
   }
 
   // Crear orden con datos actualizados de sucursal
@@ -80,9 +153,11 @@ export async function generatePDFBlob(
   }
 
   // Asegurar formato A4 (tamaño carta)
+  // Habilitar compresión para reducir el tamaño del PDF
   const doc = new jsPDF({
     format: 'a4',
-    unit: 'pt'
+    unit: 'mm',
+    compress: true // Habilitar compresión del PDF
   });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -97,32 +172,51 @@ export async function generatePDFBlob(
   const stripeColor: [number, number, number] = [220, 220, 220]; // Gris claro
   const darkStripeColor: [number, number, number] = [200, 200, 200]; // Gris medio claro
 
-  // Generar QR Code
+  // Generar QR Code con menor resolución para reducir tamaño del PDF
   let qrDataUrl = "";
   try {
+    // Reducir aún más el tamaño del QR (40px en lugar de 50px) y usar corrección de errores baja para menor tamaño
     qrDataUrl = await QRCode.toDataURL(
       `https://ordenes.playbox.cl/${order.order_number}`,
-      { width: 60, margin: 1 }
+      { width: 40, margin: 0, errorCorrectionLevel: 'L' } // Menor resolución y corrección de errores baja = menor tamaño
     );
+    console.log("[PDF] QR Code generado con tamaño optimizado (40px, errorCorrectionLevel: L)");
   } catch (error) {
     console.error("Error generando QR:", error);
   }
 
-  // Cargar logo desde configuración
+  // Cargar logo desde configuración y optimizarlo para reducir tamaño del PDF
   let logoDataUrl = "";
+  let logoFormat = "PNG";
   try {
     if (settings.pdf_logo.url.startsWith("data:")) {
-      logoDataUrl = settings.pdf_logo.url;
+      // Si ya es base64, optimizarlo convirtiéndolo a JPEG con compresión más agresiva
+      try {
+        logoDataUrl = await optimizeImageDataUrl(settings.pdf_logo.url, 0.6); // 60% de calidad para reducir más el tamaño
+        logoFormat = "JPEG";
+        console.log("[PDF] Logo optimizado a JPEG (60% calidad)");
+      } catch (optError) {
+        console.warn("[PDF] Error optimizando logo, usando original:", optError);
+        logoDataUrl = settings.pdf_logo.url;
+      }
     } else {
       const logoResponse = await fetch(settings.pdf_logo.url);
       if (logoResponse.ok) {
         const logoBlob = await logoResponse.blob();
-        logoDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(logoBlob);
-        });
+        // Convertir a JPEG con compresión más agresiva para reducir tamaño
+        try {
+          logoDataUrl = await optimizeImageBlob(logoBlob, 0.6); // 60% de calidad para reducir más el tamaño
+          logoFormat = "JPEG";
+          console.log("[PDF] Logo optimizado a JPEG (60% calidad)");
+        } catch (optError) {
+          console.warn("[PDF] Error optimizando logo, usando original:", optError);
+          logoDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(logoBlob);
+          });
+        }
       }
     }
   } catch (error) {
@@ -140,7 +234,8 @@ export async function generatePDFBlob(
     const logoHeight = settings.pdf_logo.height;
     const logoWidth = settings.pdf_logo.width;
     const logoY = (headerHeight - logoHeight) / 2;
-    doc.addImage(logoDataUrl, "PNG", margin, logoY, logoWidth, logoHeight);
+    // Usar JPEG si fue optimizado, PNG si no
+    doc.addImage(logoDataUrl, logoFormat as "PNG" | "JPEG", margin, logoY, logoWidth, logoHeight);
   }
 
   // N° Orden en caja pequeña (CENTRO del header) - solo el texto "N° Orden:" dentro
@@ -180,6 +275,7 @@ export async function generatePDFBlob(
   
   // Ancho disponible para contenido de paneles
   const panelWidth = (contentWidth - 10) / 2;
+  const panelLineHeight = 6;
   // Ancho disponible para el VALOR del texto (desde donde empieza el valor hasta el final del panel)
   // El valor se dibuja en clientPanelX + 25 o margin + 25, y el panel termina en clientPanelX + panelWidth
   // Entonces el ancho disponible es: panelWidth - 25 (margen izquierdo del valor) - 5 (margen derecho)
@@ -194,19 +290,19 @@ export async function generatePDFBlob(
   
   // Calcular líneas de texto reales
   const nameLines = doc.splitTextToSize(branchName, panelContentWidth);
-  tempPanelY += nameLines.length * 4; // Interlineado compacto (4pt por línea)
+  tempPanelY += nameLines.length * panelLineHeight;
   
   if (orderForPDF.sucursal?.address) {
     const addressLines = doc.splitTextToSize(orderForPDF.sucursal.address, panelContentWidth);
-    tempPanelY += addressLines.length * 4; // Interlineado compacto
+    tempPanelY += addressLines.length * panelLineHeight;
   }
   if (orderForPDF.sucursal?.phone) {
     const phoneLines = doc.splitTextToSize(orderForPDF.sucursal.phone, panelContentWidth);
-    tempPanelY += phoneLines.length * 4; // Altura estándar
+    tempPanelY += phoneLines.length * panelLineHeight;
   }
   if (orderForPDF.sucursal?.email) {
     const emailLines = doc.splitTextToSize(orderForPDF.sucursal.email, panelContentWidth);
-    tempPanelY += emailLines.length * 4; // Altura estándar
+    tempPanelY += emailLines.length * panelLineHeight;
   }
   
   // Altura del panel de negocio
@@ -216,100 +312,6 @@ export async function generatePDFBlob(
   // (se calcula abajo antes de dibujar)
   
   // Título del panel con franja azul (se dibujará después con la altura fija)
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-      doc.text("Playbox", margin + 3, yPosition + 6);
-
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  // Centrar verticalmente el contenido dentro del cuadro (más espacio arriba)
-  // Reducir margen superior (de 12 a 10)
-  let panelY = yPosition + 10;
-
-  // Nombre de la sucursal - Etiqueta y valor en la misma línea, valor a la derecha
-  doc.setFont("helvetica", "bold");
-  doc.text("Sucursal:", margin + 3, panelY);
-  doc.setFont("helvetica", "normal");
-  const nameLinesFinal = doc.splitTextToSize(branchName || "", panelContentWidth);
-  if (nameLinesFinal.length > 0) {
-    // Primera línea a la derecha de la etiqueta
-    doc.text(nameLinesFinal[0], margin + 25, panelY);
-    // Líneas adicionales debajo, alineadas con la primera línea del valor
-    if (nameLinesFinal.length > 1) {
-      for (let i = 1; i < nameLinesFinal.length; i++) {
-        panelY += 6; // Interlineado más grande
-        doc.text(nameLinesFinal[i], margin + 25, panelY);
-      }
-    }
-    panelY += 6; // Espacio después del campo
-  } else {
-    panelY += 6; // Si no hay nombre, avanzar
-  }
-
-      if (orderForPDF.sucursal?.address) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Dirección:", margin + 3, panelY);
-        doc.setFont("helvetica", "normal");
-        const addressLines = doc.splitTextToSize(orderForPDF.sucursal.address || "", panelContentWidth);
-        if (addressLines.length > 0) {
-          // Primera línea a la derecha de la etiqueta
-          doc.text(addressLines[0], margin + 25, panelY);
-          // Líneas adicionales debajo, alineadas con la primera línea del valor
-          if (addressLines.length > 1) {
-            for (let i = 1; i < addressLines.length; i++) {
-              panelY += 6; // Interlineado más grande
-              doc.text(addressLines[i], margin + 25, panelY);
-            }
-          }
-          panelY += 6; // Espacio después del campo
-        } else {
-          panelY += 6; // Si no hay dirección, avanzar
-        }
-      }
-
-      if (orderForPDF.sucursal?.phone) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Teléfono:", margin + 3, panelY);
-        doc.setFont("helvetica", "normal");
-        const phoneText = doc.splitTextToSize(orderForPDF.sucursal.phone || "", panelContentWidth);
-        if (phoneText.length > 0) {
-          // Primera línea a la derecha de la etiqueta
-          doc.text(phoneText[0], margin + 25, panelY);
-          // Líneas adicionales debajo, alineadas con la primera línea del valor
-          if (phoneText.length > 1) {
-            for (let i = 1; i < phoneText.length; i++) {
-              panelY += 6; // Interlineado más grande
-              doc.text(phoneText[i], margin + 25, panelY);
-            }
-          }
-          panelY += 6; // Espacio después del campo
-        } else {
-          panelY += 6; // Si no hay teléfono, avanzar
-        }
-      }
-
-      if (orderForPDF.sucursal?.email) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Correo:", margin + 3, panelY);
-        doc.setFont("helvetica", "normal");
-        const emailText = doc.splitTextToSize(orderForPDF.sucursal.email || "", panelContentWidth);
-        if (emailText.length > 0) {
-          // Primera línea a la derecha de la etiqueta
-          doc.text(emailText[0], margin + 25, panelY);
-          // Líneas adicionales debajo, alineadas con la primera línea del valor
-          if (emailText.length > 1) {
-            for (let i = 1; i < emailText.length; i++) {
-              panelY += 6; // Interlineado más grande
-              doc.text(emailText[i], margin + 25, panelY);
-            }
-          }
-          panelY += 6; // Espacio después del campo
-        } else {
-          panelY += 6; // Si no hay correo, avanzar
-        }
-      }
 
   // === PANEL CLIENTE (Derecha) ===
   const clientPanelX = margin + (contentWidth - 10) / 2 + 10;
@@ -320,20 +322,20 @@ export async function generatePDFBlob(
   let tempClientPanelY = yPosition + 8; // Padding superior
   if (order.customer) {
     const customerNameLines = doc.splitTextToSize(order.customer.name, panelContentWidth);
-    tempClientPanelY += customerNameLines.length * 4; // Nombre (interlineado compacto)
+    tempClientPanelY += customerNameLines.length * panelLineHeight;
     
     const phoneText = order.customer.phone_country_code
       ? `${order.customer.phone_country_code} ${order.customer.phone}`
       : order.customer.phone;
     const phoneLines = doc.splitTextToSize(phoneText, panelContentWidth);
-    tempClientPanelY += phoneLines.length * 4; // Teléfono
+    tempClientPanelY += phoneLines.length * panelLineHeight;
     
     const emailLines = doc.splitTextToSize(order.customer.email, panelContentWidth);
-    tempClientPanelY += emailLines.length * 4; // Correo
+    tempClientPanelY += emailLines.length * panelLineHeight;
     
     if (order.customer.address) {
       const addressLines = doc.splitTextToSize(order.customer.address, panelContentWidth);
-      tempClientPanelY += addressLines.length * 4; // Dirección (interlineado compacto)
+      tempClientPanelY += addressLines.length * panelLineHeight;
     }
   }
   // Altura del panel de cliente
@@ -365,87 +367,168 @@ export async function generatePDFBlob(
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
+  doc.text("PLAYBOX", margin + 3, yPosition + 6);
   doc.text("CLIENTE", clientPanelX + 3, yPosition + 6);
+
+  // === CONTENIDO PANEL SUCURSAL (Izquierda) ===
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  let branchPanelY = yPosition + 12;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Sucursal:", margin + 3, branchPanelY);
+  doc.setFont("helvetica", "normal");
+  const nameLinesFinal = doc.splitTextToSize(branchName || "", panelContentWidth);
+  if (nameLinesFinal.length > 0) {
+    doc.text(nameLinesFinal[0], margin + 25, branchPanelY);
+    if (nameLinesFinal.length > 1) {
+      for (let i = 1; i < nameLinesFinal.length; i++) {
+        branchPanelY += 6;
+        doc.text(nameLinesFinal[i], margin + 25, branchPanelY);
+      }
+    }
+    branchPanelY += 6;
+  } else {
+    branchPanelY += 6;
+  }
+
+  if (orderForPDF.sucursal?.address) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Dirección:", margin + 3, branchPanelY);
+    doc.setFont("helvetica", "normal");
+    const addressLines = doc.splitTextToSize(orderForPDF.sucursal.address || "", panelContentWidth);
+    if (addressLines.length > 0) {
+      doc.text(addressLines[0], margin + 25, branchPanelY);
+      if (addressLines.length > 1) {
+        for (let i = 1; i < addressLines.length; i++) {
+          branchPanelY += 6;
+          doc.text(addressLines[i], margin + 25, branchPanelY);
+        }
+      }
+      branchPanelY += 6;
+    } else {
+      branchPanelY += 6;
+    }
+  }
+
+  if (orderForPDF.sucursal?.phone) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Teléfono:", margin + 3, branchPanelY);
+    doc.setFont("helvetica", "normal");
+    const phoneText = doc.splitTextToSize(orderForPDF.sucursal.phone || "", panelContentWidth);
+    if (phoneText.length > 0) {
+      doc.text(phoneText[0], margin + 25, branchPanelY);
+      if (phoneText.length > 1) {
+        for (let i = 1; i < phoneText.length; i++) {
+          branchPanelY += 6;
+          doc.text(phoneText[i], margin + 25, branchPanelY);
+        }
+      }
+      branchPanelY += 6;
+    } else {
+      branchPanelY += 6;
+    }
+  }
+
+  if (orderForPDF.sucursal?.email) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Correo:", margin + 3, branchPanelY);
+    doc.setFont("helvetica", "normal");
+    const emailText = doc.splitTextToSize(orderForPDF.sucursal.email || "", panelContentWidth);
+    if (emailText.length > 0) {
+      doc.text(emailText[0], margin + 25, branchPanelY);
+      if (emailText.length > 1) {
+        for (let i = 1; i < emailText.length; i++) {
+          branchPanelY += 6;
+          doc.text(emailText[i], margin + 25, branchPanelY);
+        }
+      }
+      branchPanelY += 6;
+    } else {
+      branchPanelY += 6;
+    }
+  }
 
   if (order.customer) {
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     // Centrar verticalmente el contenido dentro del cuadro (más espacio arriba)
-    panelY = yPosition + 12; // Aumentar solo el margen superior para centrar el texto
+    let clientPanelY = yPosition + 12; // Aumentar solo el margen superior para centrar el texto
 
     doc.setFont("helvetica", "bold");
-    doc.text("Nombre:", clientPanelX + 3, panelY);
+    doc.text("Nombre:", clientPanelX + 3, clientPanelY);
     doc.setFont("helvetica", "normal");
     // Texto se ajusta dentro del cuadro fijo - NO se sale
     const customerNameLines = doc.splitTextToSize(order.customer.name || "", panelContentWidth);
     if (customerNameLines.length > 0) {
       // Dibujar cada línea del nombre en posición separada
       customerNameLines.forEach((line: string, index: number) => {
-        doc.text(line, clientPanelX + 25, panelY + (index * 4));
+        doc.text(line, clientPanelX + 25, clientPanelY + (index * panelLineHeight));
       });
       // Avanzar panelY después de todas las líneas del nombre
-      panelY += customerNameLines.length * 4 + 4; // Interlineado + espacio adicional entre campos
+      clientPanelY += customerNameLines.length * panelLineHeight + panelLineHeight;
     } else {
-      panelY += 4; // Si no hay nombre, solo avanzar una línea
+      clientPanelY += panelLineHeight;
     }
 
     const phoneText = order.customer.phone_country_code
       ? `${order.customer.phone_country_code} ${order.customer.phone}`
       : order.customer.phone;
     doc.setFont("helvetica", "bold");
-    doc.text("Teléfono:", clientPanelX + 3, panelY);
+    doc.text("Teléfono:", clientPanelX + 3, clientPanelY);
     doc.setFont("helvetica", "normal");
     const phoneLines = doc.splitTextToSize(phoneText || "", panelContentWidth);
     if (phoneLines.length > 0) {
       // Dibujar cada línea del teléfono en posición separada
       phoneLines.forEach((line: string, index: number) => {
-        doc.text(line, clientPanelX + 25, panelY + (index * 4));
+        doc.text(line, clientPanelX + 25, clientPanelY + (index * panelLineHeight));
       });
       // Avanzar panelY después de todas las líneas del teléfono
-      panelY += phoneLines.length * 4 + 4; // Interlineado + espacio adicional entre campos
+      clientPanelY += phoneLines.length * panelLineHeight + panelLineHeight;
     } else {
-      panelY += 4; // Si no hay teléfono, solo avanzar una línea
+      clientPanelY += panelLineHeight;
     }
 
     // Email - Etiqueta y valor en la misma línea, valor a la derecha
     doc.setFont("helvetica", "bold");
-    doc.text("Correo:", clientPanelX + 3, panelY);
+    doc.text("Correo:", clientPanelX + 3, clientPanelY);
     doc.setFont("helvetica", "normal");
     const emailLines = doc.splitTextToSize(order.customer.email || "", panelContentWidth);
     if (emailLines.length > 0) {
       // Primera línea a la derecha de la etiqueta
-      doc.text(emailLines[0], clientPanelX + 25, panelY);
+      doc.text(emailLines[0], clientPanelX + 25, clientPanelY);
       // Líneas adicionales debajo, alineadas con la primera línea del valor
       if (emailLines.length > 1) {
         for (let i = 1; i < emailLines.length; i++) {
-          panelY += 6; // Interlineado más grande
-          doc.text(emailLines[i], clientPanelX + 25, panelY);
+          clientPanelY += 6; // Interlineado más grande
+          doc.text(emailLines[i], clientPanelX + 25, clientPanelY);
         }
       }
-      panelY += 6; // Espacio después del campo
+      clientPanelY += 6; // Espacio después del campo
     } else {
-      panelY += 6; // Si no hay correo, avanzar
+      clientPanelY += 6; // Si no hay correo, avanzar
     }
 
     // Dirección - Etiqueta y valor en la misma línea, valor a la derecha
     if (order.customer.address) {
       doc.setFont("helvetica", "bold");
-      doc.text("Dirección:", clientPanelX + 3, panelY);
+      doc.text("Dirección:", clientPanelX + 3, clientPanelY);
       doc.setFont("helvetica", "normal");
       const addressLines = doc.splitTextToSize(order.customer.address, panelContentWidth);
       if (addressLines.length > 0) {
         // Primera línea a la derecha de la etiqueta
-        doc.text(addressLines[0], clientPanelX + 25, panelY);
+        doc.text(addressLines[0], clientPanelX + 25, clientPanelY);
         // Líneas adicionales debajo, alineadas con la primera línea del valor
         if (addressLines.length > 1) {
           for (let i = 1; i < addressLines.length; i++) {
-            panelY += 6; // Interlineado más grande
-            doc.text(addressLines[i], clientPanelX + 25, panelY);
+            clientPanelY += 6; // Interlineado más grande
+            doc.text(addressLines[i], clientPanelX + 25, clientPanelY);
           }
         }
-        panelY += 6; // Espacio después del campo
+        clientPanelY += 6; // Espacio después del campo
       } else {
-        panelY += 6; // Si no hay dirección, avanzar
+        clientPanelY += 6; // Si no hay dirección, avanzar
       }
     }
   }
@@ -722,34 +805,15 @@ export async function generatePDFBlob(
     // Dividir el texto en líneas que quepan en el ancho de la columna
   const descriptionColWidth = colWidths[2] - 6;
   
-    // Calcular altura disponible para este equipo
-    const maxHeightForThisDevice = availableHeightPerDevice;
-    const maxDescriptionHeightForDevice = Math.max(10, maxHeightForThisDevice - (modelLines.length * 4));
-    
-    // Dividir la descripción en líneas con límite de altura
+    // Dividir la descripción en líneas sin comprimir para evitar textos montados
     doc.setFontSize(adaptiveFontSize);
-  let descriptionLines = doc.splitTextToSize(deviceDescription || "-", descriptionColWidth);
-  
-    // Calcular interlineado adaptativo
-    const baseLineSpacing = adaptiveFontSize * 0.45;
-    let descLineSpacing = baseLineSpacing;
-    
-  if (descriptionLines.length > 0) {
-      const requiredHeight = descriptionLines.length * descLineSpacing;
-      if (requiredHeight > maxDescriptionHeightForDevice) {
-        descLineSpacing = Math.max(adaptiveFontSize * 0.35, maxDescriptionHeightForDevice / descriptionLines.length);
-        const maxLines = Math.floor(maxDescriptionHeightForDevice / descLineSpacing);
-        if (descriptionLines.length > maxLines) {
-          descriptionLines = descriptionLines.slice(0, maxLines);
-          descriptionLines[descriptionLines.length - 1] += "...";
-        }
-      }
-    }
+    const descriptionLines = doc.splitTextToSize(deviceDescription || "-", descriptionColWidth);
+    const descLineSpacing = Math.max(6, adaptiveFontSize * 1.1);
     
     // Dibujar modelo (izquierda)
     doc.setFontSize(adaptiveFontSize);
     let modelY = yPosition;
-    const modelLineSpacing = adaptiveFontSize * 0.5;
+    const modelLineSpacing = Math.max(6, adaptiveFontSize * 1.1);
     modelLines.forEach((line: string) => {
       doc.text(line, margin + 3 + colWidths[0] + 2, modelY);
       modelY += modelLineSpacing;
@@ -794,7 +858,7 @@ export async function generatePDFBlob(
     doc.setTextColor(0, 0, 0);
     
     // Actualizar posición Y después de los datos del equipo
-    yPosition = equipmentRowY + deviceRowHeight + 1; // Reducido de 3 a 1
+    yPosition = equipmentRowY + deviceRowHeight + 2;
     
     // === MOSTRAR SERVICIOS DEL EQUIPO (ANTES DEL CHECKLIST) ===
     const deviceServices = device.selected_services || [];
@@ -803,7 +867,7 @@ export async function generatePDFBlob(
     // SIEMPRE mostrar los servicios si existen, sin restricciones de espacio
     if (deviceServices.length > 0) {
       doc.setFontSize(adaptiveFontSize);
-      const serviceLineSpacing = adaptiveFontSize * 0.25; // Reducido de 0.5 a 0.25
+      const serviceLineSpacing = Math.max(6, adaptiveFontSize * 1.1);
       
       // Mostrar título "Servicios a realizar" antes de los servicios
       doc.setFontSize(6);
@@ -865,12 +929,12 @@ export async function generatePDFBlob(
     doc.setTextColor(0, 0, 0);
     
         // REDUCIR altura entre servicios para aprovechar mejor el espacio
-    const maxHeight = Math.max(
+        const maxHeight = Math.max(
           serviceNameLines.length * serviceLineSpacing,
           noteLines.length * serviceLineSpacing,
-          5 + 1 // Reducido de 6+2 a 5+1
+          serviceLineSpacing
         );
-        yPosition += maxHeight + 0.5; // Reducido de 1 a 0.5 puntos de separación entre servicios
+        yPosition += maxHeight + 2;
       });
     }
     
@@ -939,9 +1003,9 @@ export async function generatePDFBlob(
           const checklistLines = doc.splitTextToSize(checklistText, leftSideWidth);
           checklistLines.forEach((line: string) => {
             doc.text(line, margin + 3, yPosition);
-            yPosition += 2.5; // Reducido de 3 a 2.5
+            yPosition += 2.5;
           });
-          yPosition += 1; // Reducido de 2 a 1 punto después del checklist
+          yPosition += 1;
         }
       }
     }
@@ -1179,7 +1243,7 @@ export async function generatePDFBlob(
   doc.setFontSize(fontSize);
   // jsPDF usa aproximadamente fontSize para el espaciado entre líneas cuando usas doc.text(lines, x, y)
   // Usar un valor intermedio que sea realista pero permita aprovechar el espacio
-  let optimalLineSpacing = fontSize * 0.5; // Espaciado compacto pero realista
+  let optimalLineSpacing = fontSize * 0.9;
   
   // Calcular el espacio total necesario con el tamaño de fuente actual
   // Primero calcular cuánto espacio necesita cada garantía en cada columna
@@ -1207,7 +1271,7 @@ export async function generatePDFBlob(
     // Si el espacio necesario excede el disponible, reducir el tamaño de fuente
     const ratio = maxUsableHeight / totalHeightNeeded;
     fontSize = Math.max(3.5, fontSize * ratio); // Mínimo 3.5pt para que sea legible
-    optimalLineSpacing = fontSize * 0.5;
+    optimalLineSpacing = fontSize * 0.8;
     doc.setFontSize(fontSize);
     
     // Recalcular el espacio necesario con el nuevo tamaño
@@ -1229,49 +1293,8 @@ export async function generatePDFBlob(
     console.log("[PDF] Espacio necesario:", totalHeightNeeded, "puntos, disponible:", availableHeight, "puntos");
   }
   
-  // SIEMPRE intentar optimizar cuando hay un solo equipo y hay espacio disponible
-  if (isSingleDevice && totalHeightNeeded < maxUsableHeight) {
-    // Cuando hay un solo equipo, AUMENTAR el tamaño de fuente para ocupar TODO el espacio disponible
-    // Usar búsqueda para encontrar el tamaño máximo que quepa
-    let minFontSize = fontSize;
-    let maxFontSize = Math.min(12, fontSize * 3); // Máximo 12pt o el triple del tamaño actual
-    let bestFontSize = fontSize;
-    
-    // Probar diferentes tamaños desde el máximo hacia abajo hasta encontrar el que quepa
-    for (let testSize = maxFontSize; testSize >= minFontSize; testSize -= 0.25) {
-    doc.setFontSize(testSize);
-      const testLineSpacing = testSize * 0.5;
-      let testLeftHeight = 0;
-      let testRightHeight = 0;
-      
-      warrantyText.forEach((text, index) => {
-        const textWithBullet = `• ${text}`;
-        const lines = doc.splitTextToSize(textWithBullet, columnWidth - 3);
-        const textHeight = lines.length * testLineSpacing;
-        if (index % 2 === 0) {
-          testLeftHeight += textHeight;
-        } else {
-          testRightHeight += textHeight;
-        }
-      });
-      
-      const testTotalHeight = Math.max(testLeftHeight, testRightHeight);
-      
-      // Si todas las garantías caben con este tamaño, usarlo
-      if (testTotalHeight <= maxUsableHeight) {
-        bestFontSize = testSize;
-        fontSize = testSize;
-        optimalLineSpacing = testLineSpacing;
-        totalHeightNeeded = testTotalHeight;
-        leftColumnHeight = testLeftHeight;
-        rightColumnHeight = testRightHeight;
-        break; // Usar el primer tamaño que quepa (el más grande)
-      }
-    }
-    
-    console.log("[PDF] Tamaño de fuente OPTIMIZADO para aprovechar TODO el espacio (un solo equipo):", fontSize, "puntos");
-    console.log("[PDF] Espacio necesario:", totalHeightNeeded, "puntos, disponible:", availableHeight, "puntos (usando", (totalHeightNeeded / availableHeight * 100).toFixed(1), "%)");
-  }
+  // No inflar el tamaño de fuente para "llenar" el espacio.
+  // Esto provocaba garantías con demasiado espacio entre líneas.
   
   // Asegurar que el tamaño de fuente esté aplicado
   doc.setFontSize(fontSize);
@@ -1304,41 +1327,11 @@ export async function generatePDFBlob(
   let testMaxY = Math.max(...maxYPerColumn, warrantyPanelStartY + warrantyPaddingTop);
   let testPanelHeight = testMaxY - warrantyPanelStartY + warrantyPaddingBottom;
   
-  // Si el contenido no ocupa todo el espacio disponible, ajustar el interlineado
-  // para que ocupe TODO el espacio hasta la firma
-  const contentAreaHeight = availableHeight - warrantyPaddingTop - warrantyPaddingBottom;
-  if (testPanelHeight < contentAreaHeight && contentAreaHeight > 0) {
-    // Aumentar interlineado para ocupar todo el espacio
-    const expansionFactor = contentAreaHeight / (testMaxY - warrantyPanelStartY - warrantyPaddingTop);
-    optimalLineSpacing = optimalLineSpacing * expansionFactor;
-    
-    // Recalcular con nuevo interlineado
-    tempLeftY = warrantyPanelStartY + warrantyPaddingTop;
-    tempRightY = warrantyPanelStartY + warrantyPaddingTop;
-    maxYPerColumn.length = 0;
-    
-    warrantyText.forEach((text, index) => {
-      const isLeftColumn = index % 2 === 0;
-      const textWithBullet = `• ${text}`;
-      const lines = doc.splitTextToSize(textWithBullet, columnWidth - 3);
-      const textHeight = lines.length * optimalLineSpacing;
-      const minSpaceBetween = 0; // Sin espacio extra entre garantías
-      const spaceBetweenWarranties = textHeight + minSpaceBetween;
-      if (isLeftColumn) {
-        tempLeftY += spaceBetweenWarranties;
-        maxYPerColumn.push(tempLeftY);
-      } else {
-        tempRightY += spaceBetweenWarranties;
-        maxYPerColumn.push(tempRightY);
-      }
-    });
-    
-    testMaxY = Math.max(...maxYPerColumn, warrantyPanelStartY + warrantyPaddingTop);
-    testPanelHeight = testMaxY - warrantyPanelStartY + warrantyPaddingBottom;
-  }
+  // No expandir interlineado para llenar espacio; mantener compacto.
   
   maxY = testMaxY;
   warrantyPanelHeight = Math.min(testPanelHeight, availableHeight + warrantyTitleHeight + warrantyPaddingTop + warrantyPaddingBottom);
+  const initialWarrantyPanelHeight = warrantyPanelHeight;
   
   console.log("[PDF] Altura del panel de garantías:", warrantyPanelHeight, "puntos");
   console.log("[PDF] Interlineado óptimo:", optimalLineSpacing, "puntos");
@@ -1442,6 +1435,13 @@ export async function generatePDFBlob(
     warrantyPanelHeight = availableHeight + warrantyTitleHeight + warrantyPaddingTop + warrantyPaddingBottom;
   }
   
+  // Si la altura final es menor, limpiar el exceso para no tapar firmas
+  if (initialWarrantyPanelHeight > warrantyPanelHeight) {
+    const excessHeight = initialWarrantyPanelHeight - warrantyPanelHeight;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(margin, warrantyPanelStartY + warrantyPanelHeight, contentWidth, excessHeight, "F");
+  }
+
   // Redibujar el borde del panel con la altura correcta (extendido hasta la firma)
   doc.setDrawColor(200, 200, 200);
   doc.rect(margin, warrantyPanelStartY, contentWidth, warrantyPanelHeight, "S");
@@ -1474,20 +1474,42 @@ export async function generatePDFBlob(
   
   // === FIRMA DEL CLIENTE (izquierda) ===
   const clienteSignatureX = signaturesStartX;
-  doc.setFillColor(230, 230, 230);
-  doc.setDrawColor(150, 150, 150);
-  doc.setLineWidth(0.5);
-  doc.rect(clienteSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
   
-  // Si hay firma del cliente guardada, mostrarla
+  // Si hay firma del cliente guardada, mostrarla sobre fondo blanco (optimizada)
   if (order.cliente_signature_url) {
+    // Dibujar solo el borde
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.rect(clienteSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
+    
     try {
+      // Optimizar la firma antes de agregarla (convertir a JPEG con compresión)
+      let optimizedSignature = order.cliente_signature_url;
+      try {
+        optimizedSignature = await optimizeImageDataUrl(order.cliente_signature_url, 0.7); // 70% calidad
+        console.log("[PDF] Firma del cliente optimizada a JPEG");
+      } catch (optErr) {
+        console.warn("[PDF] Error optimizando firma del cliente, usando original:", optErr);
+      }
+      
       const img = new Image();
-      img.src = order.cliente_signature_url;
-      doc.addImage(img, 'PNG', clienteSignatureX + 2, signatureBoxY + 2, signatureBoxWidth - 4, sigBoxHeight - 4);
+      img.src = optimizedSignature;
+      // Usar JPEG si fue optimizada, PNG si no
+      const signatureFormat = optimizedSignature.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+      doc.addImage(img, signatureFormat, clienteSignatureX + 2, signatureBoxY + 2, signatureBoxWidth - 4, sigBoxHeight - 4);
     } catch (err) {
       console.warn("[PDF] Error cargando firma del cliente:", err);
+      // Si falla cargar la imagen, mostrar cuadro gris
+      doc.setFillColor(240, 240, 240);
+      doc.rect(clienteSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
     }
+  } else {
+    // Si no hay firma, mostrar cuadro gris claro
+    doc.setFillColor(240, 240, 240);
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.rect(clienteSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
   }
   
   doc.setFontSize(7);
@@ -1505,13 +1527,25 @@ export async function generatePDFBlob(
   doc.setLineWidth(0.5);
   doc.rect(recibidoPorSignatureX, signatureBoxY, signatureBoxWidth, sigBoxHeight, "FD");
   
-  // Si hay firma de quien recibe guardada, mostrarla
+  // Si hay firma de quien recibe guardada, mostrarla (optimizada)
   if (order.recibido_por_signature_url || recibidoPorSignature.signature_url) {
     try {
       const signatureUrl = order.recibido_por_signature_url || recibidoPorSignature.signature_url;
+      
+      // Optimizar la firma antes de agregarla (convertir a JPEG con compresión)
+      let optimizedSignature = signatureUrl;
+      try {
+        optimizedSignature = await optimizeImageDataUrl(signatureUrl, 0.7); // 70% calidad
+        console.log("[PDF] Firma de quien recibe optimizada a JPEG");
+      } catch (optErr) {
+        console.warn("[PDF] Error optimizando firma de quien recibe, usando original:", optErr);
+      }
+      
       const img = new Image();
-      img.src = signatureUrl;
-      doc.addImage(img, 'PNG', recibidoPorSignatureX + 2, signatureBoxY + 2, signatureBoxWidth - 4, sigBoxHeight - 4);
+      img.src = optimizedSignature;
+      // Usar JPEG si fue optimizada, PNG si no
+      const signatureFormat = optimizedSignature.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+      doc.addImage(img, signatureFormat, recibidoPorSignatureX + 2, signatureBoxY + 2, signatureBoxWidth - 4, sigBoxHeight - 4);
     } catch (err) {
       console.warn("[PDF] Error cargando firma de quien recibe:", err);
     }
@@ -1526,7 +1560,13 @@ export async function generatePDFBlob(
   const recibidoPorTextY = signatureBoxY + sigBoxHeight + 5;
   doc.text(recibidoPorText, recibidoPorSignatureX + (signatureBoxWidth - recibidoPorTextWidth) / 2, recibidoPorTextY);
 
-  // Retornar blob
-  return doc.output("blob");
+  // Retornar blob con tipo MIME explícito para asegurar que sea reconocido como PDF
+  const blob = doc.output("blob");
+  // Asegurar que el blob tenga el tipo MIME correcto
+  if (blob.type !== "application/pdf") {
+    console.warn("[PDF] Blob no tiene tipo application/pdf, corrigiendo...");
+    return new Blob([blob], { type: "application/pdf" });
+  }
+  return blob;
 }
 

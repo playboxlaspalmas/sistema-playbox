@@ -61,24 +61,51 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
 
     setLoading(true);
     try {
+      // Limpiar RUT: remover puntos y guiones
+      const rutLimpio = searchTerm.replace(/[.-]/g, '').trim();
+      const esRUT = /^\d{7,9}[0-9kK]?$/.test(rutLimpio);
+      
       // Usar múltiples consultas para evitar problemas con .or()
       const searchPattern = `%${searchTerm}%`;
       
-      // Consulta 1: Por nombre
+      // Consulta 1: Por RUT (exacto o parcial si es muy largo)
+      let rutData: any[] = [];
+      if (esRUT) {
+        // Buscar por RUT exacto primero
+        const { data: rutExacto } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("rut_document", rutLimpio)
+          .limit(1);
+        
+        if (rutExacto && rutExacto.length > 0) {
+          rutData = rutExacto;
+        } else {
+          // Si no se encuentra exacto, buscar por coincidencia parcial
+          const { data: rutParcial } = await supabase
+            .from("customers")
+            .select("*")
+            .ilike("rut_document", `%${rutLimpio}%`)
+            .limit(10);
+          rutData = rutParcial || [];
+        }
+      }
+      
+      // Consulta 2: Por nombre
       const { data: nameData } = await supabase
         .from("customers")
         .select("*")
         .ilike("name", searchPattern)
         .limit(10);
 
-      // Consulta 2: Por email (si no se encontró por nombre)
+      // Consulta 3: Por email
       const { data: emailData } = await supabase
         .from("customers")
         .select("*")
         .ilike("email", searchPattern)
         .limit(10);
 
-      // Consulta 3: Por teléfono (si no se encontró por nombre ni email)
+      // Consulta 4: Por teléfono
       const { data: phoneData } = await supabase
         .from("customers")
         .select("*")
@@ -87,6 +114,7 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
 
       // Combinar resultados únicos
       const allResults = [
+        ...rutData,
         ...(nameData || []),
         ...(emailData || []),
         ...(phoneData || [])
@@ -99,6 +127,12 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
 
       setCustomers(uniqueCustomers);
       setShowResults(uniqueCustomers.length > 0);
+      
+      // Si es RUT y no se encontró ningún cliente, mostrar opción para crear
+      if (esRUT && uniqueCustomers.length === 0 && rutLimpio.length >= 7) {
+        // El formulario de creación se mostrará automáticamente si no hay resultados
+        // y el usuario puede crear el cliente con el RUT prellenado
+      }
     } catch (error) {
       console.error("Error en búsqueda:", error);
       setCustomers([]);
@@ -272,13 +306,58 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
             <input
               type="text"
               className="flex-1 border border-slate-300 rounded-md px-3 py-2"
-              placeholder="Buscar cliente por nombre, email o teléfono..."
+              placeholder="Buscar cliente por nombre, email, teléfono o RUT..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                // Si parece ser un RUT y no hay resultados, pre-llenar el formulario
+                const rutLimpio = e.target.value.replace(/[.-]/g, '').trim();
+                const esRUT = /^\d{7,9}[0-9kK]?$/.test(rutLimpio);
+                if (esRUT && rutLimpio.length >= 7) {
+                  // Pre-llenar el RUT en el formulario de nuevo cliente
+                  setNewCustomer(prev => ({
+                    ...prev,
+                    rutDocument: e.target.value.replace(/[^0-9kK.-]/g, '')
+                  }));
+                }
+              }}
+              onBlur={async () => {
+                // Si es un RUT válido y no se encontró cliente, mostrar opción para crear
+                const rutLimpio = searchTerm.replace(/[.-]/g, '').trim();
+                const esRUT = /^\d{7,9}[0-9kK]?$/.test(rutLimpio);
+                if (esRUT && rutLimpio.length >= 7 && customers.length === 0 && !showForm) {
+                  // Verificar si realmente no existe
+                  const { data: rutCheck } = await supabase
+                    .from("customers")
+                    .select("*")
+                    .eq("rut_document", rutLimpio)
+                    .maybeSingle();
+                  
+                  if (!rutCheck) {
+                    // No existe, mostrar formulario con RUT prellenado
+                    setNewCustomer(prev => ({
+                      ...prev,
+                      rutDocument: searchTerm.replace(/[^0-9kK.-]/g, '')
+                    }));
+                    setShowForm(true);
+                  }
+                }
+              }}
             />
             <button
               type="button"
-              onClick={() => setShowForm(true)}
+              onClick={() => {
+                setShowForm(true);
+                // Si el searchTerm parece ser un RUT, prellenarlo
+                const rutLimpio = searchTerm.replace(/[.-]/g, '').trim();
+                const esRUT = /^\d{7,9}[0-9kK]?$/.test(rutLimpio);
+                if (esRUT && rutLimpio.length >= 7) {
+                  setNewCustomer(prev => ({
+                    ...prev,
+                    rutDocument: searchTerm.replace(/[^0-9kK.-]/g, '')
+                  }));
+                }
+              }}
               className="px-4 py-2 bg-brand-light text-white rounded-md hover:bg-brand-dark"
             >
               + Nuevo
