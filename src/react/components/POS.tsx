@@ -31,6 +31,7 @@ export default function POS({ user }: POSProps) {
   const [buscando, setBuscando] = useState(false);
   const inputBusquedaRef = useRef<HTMLInputElement>(null);
   const isProcessingRef = useRef(false);
+  const creatingVentaRef = useRef(false);
   const [mostrarRegistroCliente, setMostrarRegistroCliente] = useState(false);
   const [registrarCliente, setRegistrarCliente] = useState(false);
   const [clienteData, setClienteData] = useState({
@@ -180,10 +181,8 @@ export default function POS({ user }: POSProps) {
     async (codigoBarras: string) => {
       setError(null);
 
-      // Si no hay venta activa, crear una nueva
-      if (!ventaActual) {
-        await crearVenta();
-      }
+      const ok = await ensureVenta();
+      if (!ok) return;
 
       // Buscar producto
       const producto = await buscarProducto(codigoBarras);
@@ -283,13 +282,26 @@ export default function POS({ user }: POSProps) {
 
       setVentaActual(data);
       setError(null);
+      return true;
     } catch (err: any) {
       console.error('Error creando venta:', err);
       setError('Error al crear venta: ' + (err.message || 'Error desconocido'));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [user]);
+
+  const ensureVenta = useCallback(async () => {
+    if (ventaActual) return true;
+    if (creatingVentaRef.current) return false;
+    creatingVentaRef.current = true;
+    try {
+      return await crearVenta();
+    } finally {
+      creatingVentaRef.current = false;
+    }
+  }, [ventaActual, crearVenta]);
 
   // Actualizar cantidad de un item
   const actualizarCantidad = useCallback((productoId: string, nuevaCantidad: number) => {
@@ -611,13 +623,6 @@ export default function POS({ user }: POSProps) {
     }
   }, []);
 
-  // Inicializar venta al montar
-  useEffect(() => {
-    if (!ventaActual) {
-      crearVenta();
-    }
-  }, []);
-
   // Interceptar eventos de teclado para prevenir acciones no deseadas del navegador
   useEffect(() => {
     // Auto-focus en el input para escáneres
@@ -642,18 +647,23 @@ export default function POS({ user }: POSProps) {
           if (currentValue && !loading && !isProcessingRef.current) {
             isProcessingRef.current = true;
             // Procesar el código de barras aquí
-            buscarProductoPorCodigo(currentValue).then((prod) => {
-              if (prod) {
-                agregarAlCarrito(prod);
-                setBusquedaManual('');
-                setProductosEncontrados([]);
-              } else {
-                setError(`Producto no encontrado: ${currentValue}`);
-              }
-              isProcessingRef.current = false;
-            }).catch(() => {
-              isProcessingRef.current = false;
-            });
+            buscarProductoPorCodigo(currentValue)
+              .then(async (prod) => {
+                if (prod) {
+                  const ok = await ensureVenta();
+                  if (ok) {
+                    agregarAlCarrito(prod);
+                    setBusquedaManual('');
+                    setProductosEncontrados([]);
+                  }
+                } else {
+                  setError(`Producto no encontrado: ${currentValue}`);
+                }
+                isProcessingRef.current = false;
+              })
+              .catch(() => {
+                isProcessingRef.current = false;
+              });
           }
 
           return false;
@@ -732,18 +742,23 @@ export default function POS({ user }: POSProps) {
                 const currentValue = (e.target as HTMLInputElement).value.trim();
                 if (currentValue && !loading && !isProcessingRef.current) {
                   isProcessingRef.current = true;
-                  buscarProductoPorCodigo(currentValue).then((prod) => {
-                    if (prod) {
-                      agregarAlCarrito(prod);
-                      setBusquedaManual('');
-                      setProductosEncontrados([]);
-                    } else {
-                      setError(`Producto no encontrado: ${currentValue}`);
-                    }
-                    isProcessingRef.current = false;
-                  }).catch(() => {
-                    isProcessingRef.current = false;
-                  });
+                  buscarProductoPorCodigo(currentValue)
+                    .then(async (prod) => {
+                      if (prod) {
+                        const ok = await ensureVenta();
+                        if (ok) {
+                          agregarAlCarrito(prod);
+                          setBusquedaManual('');
+                          setProductosEncontrados([]);
+                        }
+                      } else {
+                        setError(`Producto no encontrado: ${currentValue}`);
+                      }
+                      isProcessingRef.current = false;
+                    })
+                    .catch(() => {
+                      isProcessingRef.current = false;
+                    });
                 }
 
                 return false;
@@ -768,11 +783,13 @@ export default function POS({ user }: POSProps) {
               <div
                 key={producto.id}
                 className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors gap-2 sm:gap-0"
-                onClick={() => {
+                onClick={async () => {
                   if (producto.stock_actual <= 0) {
                     setError(`Sin stock: ${producto.nombre}`);
                     return;
                   }
+                  const ok = await ensureVenta();
+                  if (!ok) return;
                   agregarAlCarrito(producto);
                   setBusquedaManual('');
                   setProductosEncontrados([]);
@@ -786,12 +803,14 @@ export default function POS({ user }: POSProps) {
                   </p>
                 </div>
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
                     if (producto.stock_actual <= 0) {
                       setError(`Sin stock: ${producto.nombre}`);
                       return;
                     }
+                    const ok = await ensureVenta();
+                    if (!ok) return;
                     agregarAlCarrito(producto);
                     setBusquedaManual('');
                     setProductosEncontrados([]);
