@@ -312,6 +312,7 @@ function BranchForm({ branch, onSave, onCancel, isAdmin }: BranchFormProps) {
     userEmail: "",
     userPassword: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   // Cargar todos los datos de la sucursal cuando se edita
   useEffect(() => {
@@ -453,15 +454,25 @@ function BranchForm({ branch, onSave, onCancel, isAdmin }: BranchFormProps) {
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 {branch?.login_email ? "Nueva Contraseña" : "Contraseña *"}
               </label>
-              <input
-                type="password"
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={formData.userPassword}
-                onChange={(e) => setFormData({ ...formData, userPassword: e.target.value })}
-                placeholder={branch?.login_email ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
-                required={!branch?.login_email}
-                minLength={branch?.login_email ? undefined : 6}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 pr-10"
+                  value={formData.userPassword}
+                  onChange={(e) => setFormData({ ...formData, userPassword: e.target.value })}
+                  placeholder={branch?.login_email ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
+                  required={!branch?.login_email}
+                  minLength={branch?.login_email ? undefined : 6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? "🙈" : "👁️"}
+                </button>
+              </div>
               <p className="text-xs text-slate-500 mt-1">
                 {branch?.login_email 
                   ? "Dejar vacío si no quieres cambiar la contraseña"

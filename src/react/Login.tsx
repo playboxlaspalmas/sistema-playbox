@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -165,14 +166,24 @@ export default function Login() {
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Contraseña
           </label>
-          <input
-            className="w-full border border-gray-300 bg-white rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
-            type="password"
-            placeholder="••••••••"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-            required
-          />
+          <div className="relative">
+            <input
+              className="w-full border border-gray-300 bg-white rounded-lg px-3 py-2 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
         </div>
 
         <button

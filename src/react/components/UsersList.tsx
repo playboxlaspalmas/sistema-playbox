@@ -218,6 +218,7 @@ function UserForm({ user, branches, onSave, onCancel }: UserFormProps) {
     role: user?.role || "technician",
     sucursal_id: user?.sucursal_id || "",
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -266,15 +267,25 @@ function UserForm({ user, branches, onSave, onCancel }: UserFormProps) {
           {!user && (
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña *</label>
-              <input
-                type="password"
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-                minLength={6}
-                placeholder="Mínimo 6 caracteres"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 pr-10"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required
+                  minLength={6}
+                  placeholder="Mínimo 6 caracteres"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? "🙈" : "👁️"}
+                </button>
+              </div>
             </div>
           )}
           <div>

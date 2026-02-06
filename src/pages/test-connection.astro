@@ -71,7 +71,10 @@
     <h2>4. Test de Autenticación</h2>
     <div>
       <input type="email" id="test-email" placeholder="Email" value="admin@servicio.com" style="padding: 8px; width: 200px; margin: 5px;">
-      <input type="password" id="test-password" placeholder="Password" value="12345678" style="padding: 8px; width: 200px; margin: 5px;">
+      <span style="position: relative; display: inline-block;">
+        <input type="password" id="test-password" placeholder="Password" value="12345678" style="padding: 8px 32px 8px 8px; width: 200px; margin: 5px;">
+        <button type="button" id="toggle-test-password" aria-label="Mostrar contraseña" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); border: none; background: transparent; cursor: pointer;">👁️</button>
+      </span>
       <button onclick="testAuth()">Probar Login</button>
     </div>
     <div id="auth-test">
@@ -81,6 +84,16 @@
 
   <script>
     (async function() {
+      const passwordInput = document.getElementById('test-password');
+      const toggleBtn = document.getElementById('toggle-test-password');
+      if (passwordInput && toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const isPassword = passwordInput.getAttribute('type') === 'password';
+          passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+          toggleBtn.textContent = isPassword ? '🙈' : '👁️';
+          toggleBtn.setAttribute('aria-label', isPassword ? 'Ocultar contraseña' : 'Mostrar contraseña');
+        });
+      }
       // Importar Supabase dinámicamente
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
 
