@@ -287,6 +287,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       let sucursalId: string | null = null;
       let branchData = null;
       let actualTechnicianId: string | null = technicianId;
+      let userRole: string | null = null;
 
       // Verificar si hay sesión de sucursal en localStorage
       if (typeof window !== 'undefined') {
@@ -299,6 +300,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
               isBranch = true;
               sucursalId = branchSession.branchId;
               actualTechnicianId = null; // Las sucursales no tienen technician_id
+              userRole = 'branch';
               
               // Cargar datos completos de la sucursal
               const { data: branch, error: branchError } = await supabase
@@ -321,7 +323,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       if (!isBranch) {
         const { data: tech, error: techError } = await supabase
           .from("users")
-          .select("sucursal_id")
+          .select("sucursal_id, role")
           .eq("id", technicianId)
           .maybeSingle(); // Usar maybeSingle en lugar de single para evitar error si no existe
 
@@ -355,6 +357,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           }
         } else {
           sucursalId = tech?.sucursal_id || null;
+          userRole = (tech as any)?.role || null;
           
           // Si el usuario es admin y no tiene sucursal_id, usar sucursal 1 por defecto
           // IMPORTANTE: Esto asegura que todas las órdenes de admin tengan una sucursal asignada
@@ -448,30 +451,37 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       }));
 
       // Preparar datos de inserción para la orden única
-      // Generar order_number si no existe trigger (fallback)
+      // Generar order_number (evitar duplicados cuando no hay visibilidad global)
       let orderNumber: string | null = null;
-      try {
-        // Intentar generar número de orden (formato: ORD-YYYY-0001)
-        const año = new Date().getFullYear();
-        const { data: ultimaOrden } = await supabase
-          .from("work_orders")
-          .select("order_number")
-          .like("order_number", `ORD-${año}-%`)
-          .order("order_number", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+      const año = new Date().getFullYear();
+      const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
 
-        let siguienteNumero = 1;
-        if (ultimaOrden?.order_number) {
-          const match = ultimaOrden.order_number.match(/ORD-\d{4}-(\d+)/);
-          if (match) {
-            siguienteNumero = parseInt(match[1]) + 1;
+      if (userRole && userRole !== 'admin') {
+        // Encargados/sucursales/técnicos: número único sin consultar la última orden
+        orderNumber = `ORD-${año}-${Date.now()}-${randomSuffix}`;
+      } else {
+        try {
+          // Intentar generar número de orden (formato: ORD-YYYY-0001)
+          const { data: ultimaOrden } = await supabase
+            .from("work_orders")
+            .select("order_number")
+            .like("order_number", `ORD-${año}-%`)
+            .order("order_number", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          let siguienteNumero = 1;
+          if (ultimaOrden?.order_number) {
+            const match = ultimaOrden.order_number.match(/ORD-\d{4}-(\d+)/);
+            if (match) {
+              siguienteNumero = parseInt(match[1]) + 1;
+            }
           }
+          orderNumber = `ORD-${año}-${String(siguienteNumero).padStart(4, "0")}`;
+        } catch (err) {
+          console.warn("Error generando order_number, usando fallback único:", err);
+          orderNumber = `ORD-${año}-${Date.now()}-${randomSuffix}`;
         }
-        orderNumber = `ORD-${año}-${String(siguienteNumero).padStart(4, "0")}`;
-      } catch (err) {
-        console.warn("Error generando order_number, el trigger de BD lo generará:", err);
-        // Si falla, dejar null para que el trigger lo genere
       }
 
       // Calcular costo total de repuestos
