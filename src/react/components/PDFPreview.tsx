@@ -547,15 +547,27 @@ export default function PDFPreview({
       doc.text(`Orden: ${order.order_number}`, margin, yPosition);
       yPosition += 12;
 
-      // Nombre de cliente
+      // Nombre y WhatsApp del cliente (dato clave en la etiqueta)
       doc.setFontSize(8);
       if (order.customer) {
+        // Nombre
         doc.setFont("helvetica", "bold");
         doc.text("Cliente:", margin, yPosition);
         doc.setFont("helvetica", "normal");
-        const customerLines = doc.splitTextToSize(order.customer.name, contentWidth - 50);
-        doc.text(customerLines, margin + 50, yPosition);
+        const customerLines = doc.splitTextToSize(order.customer.name, contentWidth - 60);
+        doc.text(customerLines, margin + 60, yPosition);
         yPosition += customerLines.length * 6 + 5;
+
+        // Teléfono / WhatsApp del cliente (siempre que exista teléfono)
+        if (order.customer.phone) {
+          doc.setFont("helvetica", "bold");
+          doc.text("WhatsApp:", margin, yPosition);
+          doc.setFont("helvetica", "normal");
+          const phoneText = `${order.customer.phone_country_code || "+56"} ${order.customer.phone}`;
+          const phoneLines = doc.splitTextToSize(phoneText, contentWidth - 60);
+          doc.text(phoneLines, margin + 60, yPosition);
+          yPosition += phoneLines.length * 6 + 5;
+        }
       }
 
       // Dispositivo
@@ -566,13 +578,27 @@ export default function PDFPreview({
       doc.text(deviceLines, margin + 60, yPosition);
       yPosition += deviceLines.length * 6 + 5;
 
-      // Passcode (movido encima de la descripción del problema)
-      if (order.device_unlock_code) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Passcode:", margin, yPosition);
-        doc.setFont("helvetica", "normal");
-        doc.text(order.device_unlock_code, margin + 60, yPosition);
-        yPosition += 10; // Más espacio abajo
+      // Passcode / Patrón (movido encima de la descripción del problema)
+      if (order.device_unlock_code || (Array.isArray(order.device_unlock_pattern) && order.device_unlock_pattern.length > 0)) {
+        if (order.device_unlock_code) {
+          doc.setFont("helvetica", "bold");
+          doc.text("Passcode:", margin, yPosition);
+          doc.setFont("helvetica", "normal");
+          doc.text(order.device_unlock_code, margin + 60, yPosition);
+          yPosition += 8;
+        }
+
+        // Mostrar patrón como secuencia de números 1–9 (para que quede registrado en la etiqueta)
+        if (Array.isArray(order.device_unlock_pattern) && order.device_unlock_pattern.length > 0) {
+          const patternText = order.device_unlock_pattern.join("");
+          doc.setFont("helvetica", "bold");
+          doc.text("Patrón:", margin, yPosition);
+          doc.setFont("helvetica", "normal");
+          doc.text(patternText, margin + 60, yPosition);
+          yPosition += 8;
+        }
+
+        yPosition += 4; // Espacio extra antes del problema
       }
 
       // === PROBLEMA O DESCRIPCIÓN - Layout Adaptativo ===
