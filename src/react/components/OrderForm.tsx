@@ -643,6 +643,8 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         ...createdOrder,
         customer: selectedCustomer,
         sucursal: branchData,
+        // Pasar flag de sin abono al objeto usado para el PDF
+        cliente_sin_abono: clienteSinAbono,
         // Incluir información de todos los equipos para el PDF
         all_devices: devices.map((device, index) => {
           const deviceServices = device.selectedServices.map(s => ({
@@ -1465,7 +1467,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
             htmlFor="commitment-date"
             className="block text-sm font-medium text-slate-700 mb-2"
           >
-            Fecha Compromiso
+            Fecha aproximada
           </label>
           <div className="relative">
             <input

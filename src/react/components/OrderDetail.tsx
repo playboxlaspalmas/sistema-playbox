@@ -71,7 +71,14 @@ export default function OrderDetail({ orderId, onClose }: OrderDetailProps) {
     return null;
   }
 
-  const patternArray = order.device_unlock_pattern as number[] | null;
+  // Soportar tanto array simple como objeto JSONB { pattern: [...] }
+  const rawPattern = (order as any).device_unlock_pattern;
+  const patternArray: number[] | null =
+    Array.isArray(rawPattern)
+      ? (rawPattern as number[])
+      : rawPattern && typeof rawPattern === "object" && Array.isArray(rawPattern.pattern)
+      ? (rawPattern.pattern as number[])
+      : null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4" onClick={onClose}>

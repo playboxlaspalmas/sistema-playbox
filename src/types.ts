@@ -95,6 +95,8 @@ export interface WorkOrder {
   paid_at?: string | null;
   warranty_days: number;
   warranty_expires_at?: string | null;
+  // Indica si el cliente no dejó abonado nada del precio del servicio
+  cliente_sin_abono?: boolean | null;
   // Campos de firmas
   cliente_signature_url?: string | null;
   recibido_por_signature_url?: string | null;

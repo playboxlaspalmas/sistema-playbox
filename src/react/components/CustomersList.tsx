@@ -136,6 +136,7 @@ export default function CustomersList({ user }: CustomersListProps) {
                 <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Nombre</th>
                 <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase hidden md:table-cell">Email</th>
                 <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Teléfono</th>
+                {/* Se mantienen columnas internas, pero RUT y dirección ya no se piden en la orden */}
                 <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase hidden lg:table-cell">RUT/Documento</th>
                 <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase hidden lg:table-cell">Dirección</th>
                 <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase hidden md:table-cell">Fecha Registro</th>

@@ -147,8 +147,8 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
       e.stopPropagation(); // Prevenir que se propague al formulario padre
     }
 
-    if (!newCustomer.name || !newCustomer.email || !newCustomer.phone) {
-      alert("Por favor completa nombre, email y teléfono");
+    if (!newCustomer.name || !newCustomer.phone) {
+      alert("Por favor completa nombre y teléfono (WhatsApp)");
       return;
     }
 
@@ -179,12 +179,7 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
         if (newCustomer.name.trim() !== existingCustomer.name) {
           updates.name = newCustomer.name.trim();
         }
-        if (newCustomer.address?.trim() && newCustomer.address.trim() !== existingCustomer.address) {
-          updates.address = newCustomer.address.trim();
-        }
-        if (newCustomer.rutDocument?.trim() && newCustomer.rutDocument.trim() !== existingCustomer.rut_document) {
-          updates.rut_document = newCustomer.rutDocument.trim();
-        }
+        // Mantener dirección y RUT existentes, pero no los pedimos más en el formulario nuevo
 
         if (Object.keys(updates).length > 0) {
           // Actualizar solo si hay cambios
@@ -211,11 +206,11 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
           .from("customers")
           .insert({
             name: newCustomer.name.trim(),
-            email: email,
+            email: email || `${phone.replace(/\D/g, "") || "cliente"}@placeholder.local`,
             phone: phone,
             phone_country_code: newCustomer.phoneCountryCode,
-            rut_document: newCustomer.rutDocument?.trim() || null,
-            address: newCustomer.address?.trim() || null,
+            rut_document: null,
+            address: null,
           })
           .select()
           .single();
@@ -411,7 +406,7 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Email (opcional)</label>
                     <input
                       type="email"
                       className="w-full border border-slate-300 rounded-md px-3 py-2"
@@ -460,24 +455,7 @@ export default function CustomerSearch({ selectedCustomer, onCustomerSelect }: C
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">RUT/Documento</label>
-                    <input
-                      type="text"
-                      className="w-full border border-slate-300 rounded-md px-3 py-2"
-                      value={newCustomer.rutDocument}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, rutDocument: e.target.value })}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Dirección</label>
-                    <input
-                      type="text"
-                      className="w-full border border-slate-300 rounded-md px-3 py-2"
-                      value={newCustomer.address}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
-                    />
-                  </div>
+                  {/* Por privacidad, ya no pedimos RUT ni dirección aquí */}
                 </div>
                 <div className="flex justify-end gap-2">
                   <button

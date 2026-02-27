@@ -36,8 +36,8 @@ export default function CustomerEditModal({ customer, onClose, onSave }: Custome
   }, []);
 
   async function handleSave() {
-    if (!formData.name || !formData.email || !formData.phone) {
-      alert("Por favor completa nombre, email y teléfono");
+    if (!formData.name || !formData.phone) {
+      alert("Por favor completa nombre y teléfono (WhatsApp)");
       return;
     }
 
@@ -46,7 +46,7 @@ export default function CustomerEditModal({ customer, onClose, onSave }: Custome
       // Preparar datos de actualización
       const updateData = {
         name: formData.name.trim(),
-        email: formData.email.trim().toLowerCase(),
+        email: (formData.email || customer.email || `${(formData.phone || customer.phone || '').replace(/\D/g, "") || "cliente"}@placeholder.local`).trim().toLowerCase(),
         phone: formData.phone.trim(),
         phone_country_code: formData.phoneCountryCode,
         rut_document: formData.rutDocument?.trim() || null,

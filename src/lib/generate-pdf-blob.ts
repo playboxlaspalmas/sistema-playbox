@@ -776,13 +776,13 @@ export async function generatePDFBlob(
     // Construir el texto del modelo con identificación clara del equipo
     let modelText = `EQUIPO ${device.index}\n${device.device_model || ""}`;
     if (device.device_serial_number) {
-      modelText += `\nIMEI: ${device.device_serial_number}`;
+      modelText += `\nSerie: ${device.device_serial_number}`;
     }
     if (device.device_unlock_code) {
-      modelText += `\nPASSCODE: ${device.device_unlock_code}`;
+      modelText += `\nContraseña: ${device.device_unlock_code}`;
     }
     if (device.device_unlock_pattern && Array.isArray(device.device_unlock_pattern)) {
-      modelText += `\nPASSCODE: ${device.device_unlock_pattern.join("")}`;
+      modelText += `\nPatrón: ${device.device_unlock_pattern.join("")}`;
     }
     
     // Dividir el texto del modelo en líneas
@@ -1055,29 +1055,9 @@ export async function generatePDFBlob(
   const actualTotalBoxHeight = 20;
   
   // Preparar checklist y garantía para mostrar al lado izquierdo del total
-  let checklistText = "";
-  if (checklistItems.length > 0 && checklistData && Object.keys(checklistData).length > 0) {
-    const checklistItemsList: string[] = [];
-    checklistItems.forEach((item) => {
-      const status = checklistData[item.item_name];
-      if (status) {
-        let statusText = "";
-        if (status === "ok") {
-          statusText = " (ok)";
-        } else if (status === "replaced") {
-          statusText = " (reparado)";
-        } else if (status === "damaged") {
-          statusText = " (dañado)";
-        } else if (status === "no_probado") {
-          statusText = " (no probado)";
-        }
-        checklistItemsList.push(`${item.item_name}${statusText}`);
-      }
-    });
-    if (checklistItemsList.length > 0) {
-      checklistText = checklistItemsList.join(", ");
-    }
-  }
+  // NOTA: el checklist ya se muestra por equipo más arriba.
+  // Para evitar duplicados, aquí NO volvemos a listar el checklist global.
+  const checklistText = "";
   
   // Calcular altura necesaria para checklist y garantía (lado izquierdo del total)
   const leftSideWidth = totalBoxX - margin - 6; // Ancho disponible a la izquierda del total
@@ -1159,6 +1139,14 @@ export async function generatePDFBlob(
   doc.setFontSize(6);
   doc.setFont("helvetica", "normal");
   doc.text(`Garantía ${warrantyDays} días`, margin + 3, leftSideY);
+  leftSideY += 4;
+
+  // Información de abono (solo si se marcó que el cliente no dejó abono)
+  if ((order as any).cliente_sin_abono) {
+    doc.setFontSize(5.5);
+    doc.setFont("helvetica", "normal");
+    doc.text("El cliente no dejó abono del servicio.", margin + 3, leftSideY);
+  }
   
   // Dibujar borde del panel
   doc.setDrawColor(200, 200, 200);

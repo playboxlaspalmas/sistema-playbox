@@ -277,7 +277,7 @@ export default function PDFPreview({
       if (order.customer) {
         doc.text(`Nombre: ${order.customer.name}`, margin, yPosition);
         yPosition += 8;
-        doc.text(`Teléfono: ${order.customer.phone_country_code || "+56"} ${order.customer.phone}`, margin, yPosition);
+        doc.text(`WhatsApp: ${order.customer.phone_country_code || "+56"} ${order.customer.phone}`, margin, yPosition);
         yPosition += 8;
         if (order.customer.email) {
           doc.text(`Email: ${order.customer.email}`, margin, yPosition);
@@ -286,11 +286,11 @@ export default function PDFPreview({
       }
       yPosition += 8;
 
-      // Fecha de compromiso
+      // Fecha aproximada
       if (order.commitment_date) {
         doc.setFontSize(8);
         doc.setFont("helvetica", "bold");
-        doc.text(`Fecha de Compromiso: ${formatDate(order.commitment_date)}`, margin, yPosition);
+        doc.text(`Fecha aproximada: ${formatDate(order.commitment_date)}`, margin, yPosition);
         yPosition += 8;
       }
 
@@ -345,11 +345,16 @@ export default function PDFPreview({
       doc.text(`Modelo: ${order.device_model}`, margin, yPosition);
       yPosition += lineSpacing;
       if (order.device_serial_number) {
-        doc.text(`IMEI: ${order.device_serial_number}`, margin, yPosition);
+        doc.text(`Serie: ${order.device_serial_number}`, margin, yPosition);
         yPosition += lineSpacing;
       }
       if (order.device_unlock_code) {
-        doc.text(`Passcode: ${order.device_unlock_code}`, margin, yPosition);
+        doc.text(`Contraseña: ${order.device_unlock_code}`, margin, yPosition);
+        yPosition += lineSpacing;
+      }
+      if (Array.isArray(order.device_unlock_pattern) && order.device_unlock_pattern.length > 0) {
+        const patternText = order.device_unlock_pattern.join("");
+        doc.text(`Patrón: ${patternText}`, margin, yPosition);
         yPosition += lineSpacing;
       }
       yPosition += lineSpacing;
@@ -578,11 +583,11 @@ export default function PDFPreview({
       doc.text(deviceLines, margin + 60, yPosition);
       yPosition += deviceLines.length * 6 + 5;
 
-      // Passcode / Patrón (movido encima de la descripción del problema)
+      // Contraseña / Patrón (movido encima de la descripción del problema)
       if (order.device_unlock_code || (Array.isArray(order.device_unlock_pattern) && order.device_unlock_pattern.length > 0)) {
         if (order.device_unlock_code) {
           doc.setFont("helvetica", "bold");
-          doc.text("Passcode:", margin, yPosition);
+          doc.text("Contraseña:", margin, yPosition);
           doc.setFont("helvetica", "normal");
           doc.text(order.device_unlock_code, margin + 60, yPosition);
           yPosition += 8;
@@ -655,10 +660,10 @@ export default function PDFPreview({
         yPosition += 12; // Aumentado de 8 a 12
       }
 
-      // Fecha de compromiso
+      // Fecha aproximada
       if (order.commitment_date) {
         doc.setFont("helvetica", "bold");
-        doc.text("Fecha Compromiso:", margin, yPosition);
+        doc.text("Fecha aproximada:", margin, yPosition);
         doc.setFont("helvetica", "normal");
         doc.text(formatDate(order.commitment_date), margin + 90, yPosition);
       }
@@ -778,7 +783,7 @@ export default function PDFPreview({
       : "56" + order.customer.phone.replace(/\D/g, "");
     
     const message = encodeURIComponent(
-      `Hola ${order.customer.name},\n\nTu orden ${order.order_number} ha sido creada.\n\nTotal: ${formatCLP(order.total_repair_cost)}\n\nDetalle de servicios:\n${services.map(s => `• ${s.name}`).join("\n")}`
+      `Hola ${order.customer.name},\n\nTe envío el PDF de tu orden ${order.order_number}.\n\nTotal: ${formatCLP(order.total_repair_cost)}\n\nDetalle de servicios:\n${services.map(s => `• ${s.name}`).join("\n")}\n\nPor favor adjunta el archivo PDF que se descargó automáticamente en este chat.`
     );
     
     window.open(`https://wa.me/${phone}?text=${message}`, "_blank");

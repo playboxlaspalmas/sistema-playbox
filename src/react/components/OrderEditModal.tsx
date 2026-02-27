@@ -498,7 +498,7 @@ export default function OrderEditModal({ order, onClose, onSaved }: OrderEditMod
                 htmlFor="commitment-date"
                 className="block text-sm font-medium text-slate-700 mb-2"
               >
-                Fecha Compromiso
+                Fecha aproximada
               </label>
               <input
                 id="commitment-date"

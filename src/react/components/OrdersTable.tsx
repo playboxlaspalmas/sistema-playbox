@@ -229,8 +229,8 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
       return;
     }
 
-    // Si el estado cambió a "por_entregar" y hay cliente, mostrar diálogo de notificación
-    if (newStatus === 'por_entregar' && order.customer) {
+    // Si el estado cambió a "por_entregar" o "entregada" y hay cliente, mostrar diálogo de notificación
+    if ((newStatus === 'por_entregar' || newStatus === 'entregada') && order.customer) {
       // Resetear métodos de notificación (email por defecto)
       setNotificationMethods({ email: true, whatsapp: false });
       // Mostrar diálogo
@@ -257,7 +257,7 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
       if (error) throw error;
 
       // Enviar notificaciones según los métodos seleccionados
-      if (newStatus === 'por_entregar' && order.customer) {
+      if ((newStatus === 'por_entregar' || newStatus === 'entregada') && order.customer) {
         const notifications: string[] = [];
 
         // Enviar email si está seleccionado
@@ -316,9 +316,11 @@ export default function OrdersTable({ technicianId, isAdmin = false, user, onNew
 
         // Mostrar resumen de notificaciones
         if (notifications.length > 0) {
-          alert(`Orden actualizada a "Por entregar"\n\n${notifications.join('\n')}`);
+          const estadoTexto = newStatus === 'por_entregar' ? 'Por entregar' : 'Entregada';
+          alert(`Orden actualizada a "${estadoTexto}"\n\n${notifications.join('\n')}`);
         } else if (methods.email || methods.whatsapp) {
-          alert(`Orden actualizada a "Por entregar"\n\n⚠️ No se pudo enviar ninguna notificación (faltan datos del cliente)`);
+          const estadoTexto = newStatus === 'por_entregar' ? 'Por entregar' : 'Entregada';
+          alert(`Orden actualizada a "${estadoTexto}"\n\n⚠️ No se pudo enviar ninguna notificación (faltan datos del cliente)`);
         }
       }
 
